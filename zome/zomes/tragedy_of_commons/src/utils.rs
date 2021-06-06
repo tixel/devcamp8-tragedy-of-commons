@@ -3,8 +3,6 @@ use holo_hash::AgentPubKeyB64;
 // NOTE: didn't had time to figure out how to apply this once on a lib level
 // TODO: remove it later
 
-#[allow(dead_code)]
-use hdk::prelude::*;
 
 pub fn try_get_and_convert<T: 'static + TryFrom<Entry>>(entry_hash: EntryHash) -> ExternResult<T> {
     match get(entry_hash.clone(), GetOptions::default())? {

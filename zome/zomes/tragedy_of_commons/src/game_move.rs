@@ -1,12 +1,6 @@
 use std::{collections::HashMap, vec};
 
-use crate::{
-    game_round::{self, GameRound, RoundState},
-    game_session::{GameScores, GameSession, GameSignal, SessionState, SignalPayload},
-    persistence::{self, Repository},
-    types::ResourceAmount,
-    utils::{convert_keys_from_b64, try_get_and_convert},
-};
+use crate::{game_round::{self, GameRound, RoundState, calculate_round_state}, game_session::{GameScores, GameSession, GameSignal, SessionState, SignalPayload}, persistence::{self, Repository}, types::ResourceAmount, utils::{convert_keys_from_b64, try_get_and_convert}};
 use hdk::prelude::*;
 use mockall::*;
 use holo_hash::AgentPubKeyB64;

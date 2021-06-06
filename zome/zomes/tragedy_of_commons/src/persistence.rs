@@ -5,7 +5,7 @@ use std::{cell::RefCell, collections::HashMap};
 
 #[allow(dead_code)]
 use hdk::prelude::*;
-use mockall::*;
+// use mockall::automock;
 
 use crate::{
     game_move::GameMove,
@@ -35,16 +35,16 @@ impl RepositoryT for ErrRepository {
     fn try_it(&self) -> GameRound {
         unimplemented!()
     }
-    fn try_get_game_round(&self, entry_hash: EntryHash) -> GameRound {
+    fn try_get_game_round(&self, _entry_hash: EntryHash) -> GameRound {
         unimplemented!()
     }
-    fn try_get_game_session(&self, entry_hash: EntryHash) -> GameSession {
+    fn try_get_game_session(&self, _entry_hash: EntryHash) -> GameSession {
         unimplemented!()
     }
-    fn try_get_game_moves(&self, entry_hash: EntryHash) -> Links {
+    fn try_get_game_moves(&self, _entry_hash: EntryHash) -> Links {
         unimplemented!()
     }
-    fn try_get_game_move(&self, entry_hash: EntryHash) -> GameMove {
+    fn try_get_game_move(&self, _entry_hash: EntryHash) -> GameMove {
         unimplemented!()
     }
 }
@@ -88,6 +88,7 @@ impl RepositoryT for Repository {
     }
 }
 
+#[cfg(test)]
 pub fn set_repository<R: 'static>(repo: R)
 where
     R: RepositoryT,
@@ -96,65 +97,3 @@ where
         *h.borrow_mut() = Box::new(repo);
     });
 }
-
-// use crate::{game_move::GameMove, game_round::GameRound, game_session::GameSession, utils::try_get_and_convert};
-
-// impl DHTRepository for Repository{
-//     fn try_get_game_round(&self, entry_hash: EntryHash) -> GameRound {
-//         let x:GameRound = try_get_and_convert(entry_hash).ok().unwrap();  // DIRTY -> clean up
-//         x
-//     }
-//     fn try_get_game_session(&self, entry_hash: EntryHash) -> GameSession {
-//         let x:GameSession = try_get_and_convert(entry_hash).ok().unwrap();  // DIRTY -> clean up
-//         x
-//     }
-//     fn try_get_game_move(&self, entry_hash: EntryHash) -> GameMove {
-//         let x:GameMove = try_get_and_convert(entry_hash).ok().unwrap();  // DIRTY -> clean up
-//         x
-//     }
-// }
-
-// /*-------------MOCK-------------------------------------*/
-// // #[cfg(test)]
-// // use std::collections::HashMap;
-// // #[cfg(test)]
-// // use ::fixt::prelude::*;
-// // #[cfg(test)]
-// // use crate::game_round::RoundState;
-
-// // #[cfg(test)]
-// // pub struct MockRepository{
-// // }
-
-// // #[cfg(test)]
-// // impl MockRepository{
-// // }
-
-// // #[cfg(test)]
-// // use mockall::*;
-
-// // #[cfg(test)]
-// // #[automock]
-// // impl DHTRepository for MockRepository {
-
-// //     fn try_get_game_round(_entry_hash: EntryHash) -> GameRound {
-// //         let game_round = GameRound {
-// //             round_num: 0,
-// //             session: fixt!(EntryHash),
-// //             round_state: RoundState {
-// //                 resource_amount: 100,
-// //                 player_stats: HashMap::new(),
-
-// //             },
-// //             previous_round_moves: vec![],
-// //         };
-// //         game_round
-
-// //     }
-// //     fn try_get_game_session(&self, entry_hash: EntryHash) -> GameSession {
-// //         unimplemented!()
-// //     }
-// //     fn try_get_game_move(&self, entry_hash: EntryHash) -> GameMove {
-// //         unimplemented!()
-// //     }
-// // }

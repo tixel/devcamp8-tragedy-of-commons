@@ -170,16 +170,6 @@ pub fn new_session(input: GameSessionInput) -> ExternResult<HeaderHash> {
     Ok(header_hash_round_zero)
 }
 
-fn give_all_players_full_stats(
-    _gp: GameParams,
-    _p: Vec<AgentPubKey>,
-) -> HashMap<AgentPubKey, (ResourceAmount, ReputationAmount)> {
-    // TODO add map that gives all players full starting stats <AgentPubKey, (ResourceAmount, ReputationAmount)>,
-    HashMap::new()
-
-    Ok(header_hash_round_zero)
-}
-
 #[derive(Serialize, Deserialize, SerializedBytes, Debug)]
 #[serde(tag = "signal_name", content = "signal_payload")]
 pub enum GameSignal {
@@ -190,7 +180,7 @@ pub enum GameSignal {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fixt::prelude::*;
+    use ::fixt::prelude::*;
     use hdk::prelude::*;
     use std::vec;
 

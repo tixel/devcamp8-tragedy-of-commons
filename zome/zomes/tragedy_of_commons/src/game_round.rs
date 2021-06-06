@@ -37,6 +37,9 @@ impl Clone for GameRound {
 
     fn clone_from(&mut self, source: &Self) {
         *self = source.clone()
+    }
+}
+
 impl RoundState {
     /// Creates a new RoundState instance with the provided input
     pub fn new(resource_amount: ResourceAmount, player_stats: PlayerStats) -> RoundState {
@@ -127,7 +130,7 @@ pub fn calculate_round_state(params: GameParams, player_moves: Vec<GameMove>) ->
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fixt::prelude::*;
+    use ::fixt::prelude::*;
     use hdk::prelude::*;
     use mockall::mock;
     use std::vec;
