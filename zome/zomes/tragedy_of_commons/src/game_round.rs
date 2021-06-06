@@ -1,7 +1,8 @@
 use crate::game_move::GameMove;
 use crate::game_session::GameParams;
-use crate::types::{ReputationAmount, ResourceAmount};
+use crate::types::{PlayerStats, ReputationAmount, ResourceAmount};
 use hdk::prelude::*;
+use holo_hash::AgentPubKeyB64;
 use std::collections::HashMap;
 
 const NO_REPUTATION: ReputationAmount = 0;
@@ -10,7 +11,7 @@ const NO_REPUTATION: ReputationAmount = 0;
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, SerializedBytes)]
 pub struct RoundState {
     pub resource_amount: ResourceAmount,
-    pub player_stats: HashMap<AgentPubKey, (ResourceAmount, ReputationAmount)>,
+    pub player_stats: PlayerStats,
 }
 
 #[hdk_entry(id = "game_round", visibility = "public")]
@@ -36,6 +37,30 @@ impl Clone for GameRound {
 
     fn clone_from(&mut self, source: &Self) {
         *self = source.clone()
+impl RoundState {
+    /// Creates a new RoundState instance with the provided input
+    pub fn new(resource_amount: ResourceAmount, player_stats: PlayerStats) -> RoundState {
+        RoundState {
+            resource_amount,
+            player_stats,
+        }
+    }
+}
+
+impl GameRound {
+    /// Creates a new GameRound instance with the provided input
+    pub fn new(
+        round_num: u32,
+        session: EntryHash,
+        round_state: RoundState,
+        previous_round_moves: Vec<EntryHash>,
+    ) -> GameRound {
+        GameRound {
+            round_num,
+            session,
+            round_state,
+            previous_round_moves,
+        }
     }
 }
 
@@ -66,7 +91,7 @@ pub fn calculate_round_state(params: GameParams, player_moves: Vec<GameMove>) ->
     let total_leftover_resource = params.start_amount - consumed_resources_in_round;
 
     // player stats
-    let mut stats: HashMap<AgentPubKey, (ResourceAmount, ReputationAmount)> = HashMap::new();
+    let mut stats: HashMap<AgentPubKeyB64, (ResourceAmount, ReputationAmount)> = HashMap::new();
     for p in player_moves.iter() {
         let a = p.owner.clone();
         let tuple: (ResourceAmount, ReputationAmount) = (p.resources, NO_REPUTATION);
@@ -102,7 +127,7 @@ pub fn calculate_round_state(params: GameParams, player_moves: Vec<GameMove>) ->
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ::fixt::prelude::*;
+    use fixt::prelude::*;
     use hdk::prelude::*;
     use mockall::mock;
     use std::vec;

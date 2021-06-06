@@ -1,49 +1,19 @@
 use std::{collections::HashMap, vec};
 
 use crate::{
-    game_round::{self, calculate_round_state, GameRound, RoundState},
+    game_round::{self, GameRound, RoundState},
     game_session::{GameScores, GameSession, GameSignal, SessionState, SignalPayload},
     persistence::{self, Repository},
     types::ResourceAmount,
-    utils::try_get_and_convert,
+    utils::{convert_keys_from_b64, try_get_and_convert},
 };
 use hdk::prelude::*;
 use mockall::*;
-
-// #[cfg(not(test))]
-// use crate::persistence::Repository;
-// #[cfg(test)]
-// use crate::persistence::MockRepository as Repository;
-
-// struct Repository {}
-
-// #[automock]
-// impl Repository{
-//     fn new() -> Self{
-//         Repository{}
-//     }
-
-//     fn try_it(&self) -> GameRound {
-//         unimplemented!()
-//     }
-
-//     fn try_get_game_round(&self, entry_hash: EntryHash) -> GameRound {
-//         let x:GameRound = try_get_and_convert(entry_hash).ok().unwrap();  // DIRTY -> clean up
-//         x
-//     }
-//     fn try_get_game_session(&self, entry_hash: EntryHash) -> GameSession {
-//         let x:GameSession = try_get_and_convert(entry_hash).ok().unwrap();  // DIRTY -> clean up
-//         x
-//     }
-//     fn try_get_game_move(&self, entry_hash: EntryHash) -> GameMove {
-//         let x:GameMove = try_get_and_convert(entry_hash).ok().unwrap();  // DIRTY -> clean up
-//         x
-//     }
-// }
+use holo_hash::AgentPubKeyB64;
 
 #[hdk_entry(id = "game_move", visibility = "public")]
 pub struct GameMove {
-    pub owner: AgentPubKey,
+    pub owner: AgentPubKeyB64,
     // For the very first round this option would be None, because we create game rounds
     // retrospectively. And since all players are notified by the signal when they can make
     // a move, maybe we could pass that value from there, so that every player has it
@@ -62,7 +32,9 @@ pub struct GameMoveInput {
 
 /*
 validation rules:
+    - TODO: impl validation to make sure move is commited by player who's playing the game
 
+for the context, here are notes on how we've made this decision:
 - validate that one player only made one move for any round
     - right now we'll need to run get_links for that, can we avoid it?
     - alternative: get agent activity
@@ -75,17 +47,12 @@ validation rules:
         made by agent for any round and use it when calculating
         - NOTE: we'll have vulnerability
         - NOTE: update round closing rules to check that every AGENT made a move
-
-        - TODO: impl validation to make sure move is commited by player who's playing the game
-
 */
 #[hdk_extern]
 pub fn new_move(input: GameMoveInput) -> ExternResult<HeaderHash> {
     // todo: add guard clauses for empty input
-    // todo: calculate agent address
-    // todo: create a GameMove entry
     let game_move = GameMove {
-        owner: agent_info()?.agent_initial_pubkey,
+        owner: AgentPubKeyB64::from(agent_info()?.agent_initial_pubkey),
         resources: input.resource_amount,
         previous_round: input.previous_round.clone(),
     };
@@ -194,6 +161,8 @@ fn create_new_round(
     round_state: RoundState,
 ) -> ExternResult<EntryHash> {
     let session_hash = hash_entry(&session)?;
+    // TODO: instead of creating a new entry, we should continue the update chain
+    // from the previous round entry hash and commit an updated version
     let round = GameRound {
         round_num: prev_round_num + 1,
         round_state: round_state,
@@ -203,7 +172,6 @@ fn create_new_round(
     create_entry(&round)?;
     let entry_hash_round = hash_entry(&round)?;
 
-    // todo send GameSignal: StartNextRound
     let signal_payload = SignalPayload {
         // tixel: not sure if we need the full objects or only the hashes or both. The tests will tell...
         game_session: session.clone(),
@@ -212,15 +180,16 @@ fn create_new_round(
         previous_round_entry_hash: entry_hash_round.clone(),
     };
     let signal = ExternIO::encode(GameSignal::StartNextRound(signal_payload))?;
-    remote_signal(signal, session.players.clone())?;
-    println!("sending signal to {:?}", session.players.clone());
+    // Since we're storing agent keys as AgentPubKeyB64, and remote_signal only accepts
+    // the AgentPubKey type, we need to convert our keys to the expected data type
+    remote_signal(signal, convert_keys_from_b64(session.players.clone()))?;
+    tracing::debug!("sending signal to {:?}", session.players.clone());
 
     Ok(entry_hash_round)
 }
 
 fn end_game(session: GameSession, round_state: RoundState) -> ExternResult<EntryHash> {
     let session_hash = hash_entry(&session)?;
-    // todo send GameSignal: StartNextRound
     let scores = GameScores {
         // tixel: not sure if we need the full objects or only the hashes or both. The tests will tell...
         game_session: session.clone(),
@@ -228,17 +197,22 @@ fn end_game(session: GameSession, round_state: RoundState) -> ExternResult<Entry
     };
     create_entry(&scores)?;
     let scores_entry_hash = hash_entry(&scores)?;
+
+    // TODO: update GameSession entry to set it's state to closed
+
     let signal = ExternIO::encode(GameSignal::GameOver(scores))?;
-    remote_signal(signal, session.players.clone())?;
-    println!("sending signal to {:?}", session.players.clone());
+    // Since we're storing agent keys as AgentPubKeyB64, and remote_signal only accepts
+    // the AgentPubKey type, we need to convert our keys to the expected data type
+    remote_signal(signal, convert_keys_from_b64(session.players.clone()))?;
+    tracing::debug!("sending signal to {:?}", session.players.clone());
 
     Ok(scores_entry_hash)
 }
 
 // Retrieves all available game moves made in a certain round, where entry_hash identifies
 // base for the links.
-fn get_all_round_moves(entry_hash: EntryHash) {
-    unimplemented!()
+fn get_all_round_moves(round_entry_hash: EntryHash) {
+    unimplemented!();
 }
 
 #[cfg(test)]

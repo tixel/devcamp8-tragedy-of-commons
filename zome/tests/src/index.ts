@@ -107,7 +107,7 @@ orchestrator.registerScenario(
     //Alice starts a new game (session) with bob and herself
     let session_header_hash = await alice_common.cells[0].call(
       ZOME_NAME,
-      "start_new_session",
+      "start_dummy_session",
       [bob_common.agent, alice_common.agent]
     );
     console.log(session_header_hash);

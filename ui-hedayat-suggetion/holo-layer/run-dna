@@ -1,0 +1,5 @@
+hc app init workdir/happ
+
+hc app pack workdir/happ
+
+hc sandbox generate workdir/happ/ --run=8888 --app-id=peershare-app

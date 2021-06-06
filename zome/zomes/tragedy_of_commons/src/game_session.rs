@@ -1,9 +1,11 @@
-use crate::types::ResourceAmount;
+use crate::types::{new_player_stats, ResourceAmount};
 use crate::{
     game_round::{GameRound, RoundState},
     types::ReputationAmount,
+    utils::convert_keys_from_b64,
 };
 use hdk::prelude::*;
+use holo_hash::AgentPubKeyB64;
 use std::{collections::HashMap, time::SystemTime};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -27,17 +29,17 @@ pub struct GameParams {
 #[hdk_entry(id = "game_session", visibility = "public")]
 #[derive(Clone)]
 pub struct GameSession {
-    pub owner: AgentPubKey, // who started the game
+    pub owner: AgentPubKeyB64, // who started the game
     // pub created_at: Timestamp,     // when the game was started
-    pub status: SessionState,      // how the game is going
-    pub game_params: GameParams,   // what specific game are we playing
-    pub players: Vec<AgentPubKey>, // who is playing
+    pub status: SessionState,         // how the game is going
+    pub game_params: GameParams,      // what specific game are we playing
+    pub players: Vec<AgentPubKeyB64>, // who is playing
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, SerializedBytes)]
 pub struct GameSessionInput {
     pub game_params: GameParams,
-    pub players: Vec<AgentPubKey>,
+    pub players: Vec<AgentPubKeyB64>,
 }
 
 #[derive(Debug, Serialize, Deserialize, SerializedBytes)]
@@ -80,9 +82,8 @@ impl GameSession {
     }
 }
 
-//external function that can be called from UI/test, until invitation zoom is added.
-#[hdk_extern]
-pub fn start_new_session(player_list: Vec<AgentPubKey>) -> ExternResult<HeaderHash> {
+// placeholder function that can be called from UI/test, until invitation zoom is added.
+pub fn start_dummy_session(player_list: Vec<AgentPubKeyB64>) -> ExternResult<HeaderHash> {
     let input = GameSessionInput {
         game_params: GameParams {
             regeneration_factor: 1.1,
@@ -96,18 +97,19 @@ pub fn start_new_session(player_list: Vec<AgentPubKey>) -> ExternResult<HeaderHa
     new_session(input)
 }
 
+/// Create a new GameSession with the confirmed players (who accepted their invites).
+/// NOTE: we're only creating session for those who accepted and only if there are at
+/// least two of them -- otherwise there won't be any turns.
 pub fn new_session(input: GameSessionInput) -> ExternResult<HeaderHash> {
-    // NOTE: we create a new session already having invites answered by everyone invited
-    // and invite zome handles invite process before this fn call
-    let agent_info: AgentInfo = agent_info()?; // agent that starts new game
+    // agent that starts new game
+    let agent_info: AgentInfo = agent_info()?;
 
-    // todo:
-    // get timestamp
+    // TODO: get timestamp as systime
 
     let latest_pubkey = agent_info.agent_latest_pubkey;
     // create entry for game session
     let gs = GameSession {
-        owner: agent_info.agent_initial_pubkey.clone(),
+        owner: AgentPubKeyB64::from(agent_info.agent_initial_pubkey),
         status: SessionState::InProgress,
         game_params: input.game_params,
         players: input.players.clone(),
@@ -116,21 +118,30 @@ pub fn new_session(input: GameSessionInput) -> ExternResult<HeaderHash> {
     let entry_hash_game_session = hash_entry(&gs)?;
 
     // make link from every players agent address to game session entry
+    // tixel: this is not needed I think, implicit links are in game session
+    // might only be needed if remote_signal for some reason would proof to be unreliable
+    // e-nastasia: I think we'll need it to implement "list all games I've created"
+    // functionality for any user.
     // create_link(agent_info.agent_initial_pubkey.clone().into(),
     // entry_hash_game_session.clone(), LinkTag::new("game_sessions"))?;
 
     // create game round results for round 0
     // this is starting point for all the game moves of round 1 to reference (implicit link)
     let no_moves: Vec<EntryHash> = vec![];
-    let round_zero = GameRound {
-        round_num: 0,
-        round_state: RoundState {
-            resource_amount: gs.game_params.start_amount,
-            player_stats: give_all_players_full_stats(gs.game_params, input.players.clone()),
-        },
-        session: entry_hash_game_session.clone(),
-        previous_round_moves: no_moves,
-    };
+
+    // TODO: create a link from session to game round entry to make the round discoverable
+    let round_zero = GameRound::new(
+        0,
+        entry_hash_game_session.clone(),
+        RoundState::new(
+            // NOTE(e-nastasia): we don't have to do clone() for the start_amount
+            // because it's one of the primitive types that implement the Copy trait
+            // so it's value will be copied instead of being moved
+            gs.game_params.start_amount,
+            new_player_stats(input.players.clone()),
+        ),
+        no_moves,
+    );
     let header_hash_round_zero = create_entry(&round_zero)?;
     let entry_hash_round_zero = hash_entry(&round_zero)?;
 
@@ -148,7 +159,9 @@ pub fn new_session(input: GameSessionInput) -> ExternResult<HeaderHash> {
         previous_round_entry_hash: entry_hash_round_zero,
     };
     let signal = ExternIO::encode(GameSignal::StartNextRound(signal_payload))?;
-    remote_signal(signal, input.players.clone())?;
+    // Since we're storing agent keys as AgentPubKeyB64, and remote_signal only accepts
+    // the AgentPubKey type, we need to convert our keys to the expected data type
+    remote_signal(signal, convert_keys_from_b64(input.players.clone()))?;
     tracing::debug!("sending signal to {:?}", input.players.clone());
 
     // // todo: get timestamp as systime
@@ -163,6 +176,8 @@ fn give_all_players_full_stats(
 ) -> HashMap<AgentPubKey, (ResourceAmount, ReputationAmount)> {
     // TODO add map that gives all players full starting stats <AgentPubKey, (ResourceAmount, ReputationAmount)>,
     HashMap::new()
+
+    Ok(header_hash_round_zero)
 }
 
 #[derive(Serialize, Deserialize, SerializedBytes, Debug)]
@@ -172,76 +187,76 @@ pub enum GameSignal {
     GameOver(GameScores),
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     use ::fixt::prelude::*;
-//     use hdk::prelude::*;
-//     use std::vec;
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use fixt::prelude::*;
+    use hdk::prelude::*;
+    use std::vec;
 
-//     #[test]
-//     fn test_new_session() {
-//         let mut mock_hdk = hdk::prelude::MockHdkT::new();
-//         let game_params = GameParams {
-//             regeneration_factor: 1.1,
-//             start_amount: 100,
-//             num_rounds: 3,
-//             resource_coef: 3,
-//             reputation_coef: 2,
-//         };
+    #[test]
+    fn test_new_session() {
+        let mut mock_hdk = hdk::prelude::MockHdkT::new();
+        let game_params = GameParams {
+            regeneration_factor: 1.1,
+            start_amount: 100,
+            num_rounds: 3,
+            resource_coef: 3,
+            reputation_coef: 2,
+        };
 
-//         // mock agent info
-//         let agent_pubkey = fixt!(AgentPubKey);
-//         let agent_info = AgentInfo::new(agent_pubkey.clone(), agent_pubkey.clone());
-//         let agent2_pubkey = fixt!(AgentPubKey);
+        // mock agent info
+        let agent_pubkey = fixt!(AgentPubKey);
+        let agent_info = AgentInfo::new(agent_pubkey.clone(), agent_pubkey.clone());
+        let agent2_pubkey = fixt!(AgentPubKey);
 
-//         mock_hdk
-//             .expect_agent_info()
-//             .times(1)
-//             .return_once(move |_| Ok(agent_info));
+        mock_hdk
+            .expect_agent_info()
+            .times(1)
+            .return_once(move |_| Ok(agent_info));
 
-//         // mock create entry
-//         let headerhash = fixt!(HeaderHash);
+        // mock create entry
+        let headerhash = fixt!(HeaderHash);
 
-//         let entryhash = fixt!(EntryHash);
-//         let closure_header_hash = headerhash.clone();
-//         mock_hdk
-//         .expect_create()
-//         .with(hdk::prelude::mockall::predicate::eq(
-//             EntryWithDefId::try_from(GameSession {
-//                 owner: agent_pubkey.clone(),
-//                 status: SessionState::InProgress,
-//                 game_params: game_params.clone(),
-//                 players: vec![agent_pubkey.clone(), agent2_pubkey]
-//             })
-//                 .unwrap(),
-//             ))
-//             .times(1)
-//             .return_once(move |_| Ok(closure_header_hash));
+        let entryhash = fixt!(EntryHash);
+        let closure_header_hash = headerhash.clone();
+        mock_hdk
+            .expect_create()
+            .with(hdk::prelude::mockall::predicate::eq(
+                EntryWithDefId::try_from(GameSession {
+                    owner: agent_pubkey.clone(),
+                    status: SessionState::InProgress,
+                    game_params: game_params.clone(),
+                    players: vec![agent_pubkey.clone(), agent2_pubkey],
+                })
+                .unwrap(),
+            ))
+            .times(1)
+            .return_once(move |_| Ok(closure_header_hash));
 
-//             let input = GameSessionInput {
-//                 game_params: game_params,
-//                 players: vec![fixt!(AgentPubKey), fixt!(AgentPubKey), fixt!(AgentPubKey)], // 3 random players
-//             };
+        let input = GameSessionInput {
+            game_params: game_params,
+            players: vec![fixt!(AgentPubKey), fixt!(AgentPubKey), fixt!(AgentPubKey)], // 3 random players
+        };
 
-//             let entry_hash_game_session = fixt!(EntryHash);
-//             mock_hdk
-//             .expect_hash_entry()
-//             .times(1)
-//             .return_once(move |_| Ok(entry_hash_game_session));
+        let entry_hash_game_session = fixt!(EntryHash);
+        mock_hdk
+            .expect_hash_entry()
+            .times(1)
+            .return_once(move |_| Ok(entry_hash_game_session));
 
-//             mock_hdk
-//             .expect_remote_signal()
-//             .times(1)
-//             .return_once(move |_| Ok(()));
+        mock_hdk
+            .expect_remote_signal()
+            .times(1)
+            .return_once(move |_| Ok(()));
 
-//             let header_hash_link = fixt!(HeaderHash);
-//             mock_hdk
-//             .expect_create_link()
-//             .times(1)
-//             .return_once(move |_| Ok(header_hash_link));
+        let header_hash_link = fixt!(HeaderHash);
+        mock_hdk
+            .expect_create_link()
+            .times(1)
+            .return_once(move |_| Ok(header_hash_link));
 
-//             hdk::prelude::set_hdk(mock_hdk);
-//             new_session(input);
-//         }
-//     }
+        hdk::prelude::set_hdk(mock_hdk);
+        new_session(input);
+    }
+}
