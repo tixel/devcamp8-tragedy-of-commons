@@ -7,18 +7,36 @@ use std::collections::HashMap;
 const NO_REPUTATION: ReputationAmount = 0;
 
 // todo: rename it so we don't have name clash with SessionState
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, SerializedBytes)]
 pub struct RoundState {
     pub resource_amount: ResourceAmount,
     pub player_stats: HashMap<AgentPubKey, (ResourceAmount, ReputationAmount)>,
 }
 
 #[hdk_entry(id = "game_round", visibility = "public")]
+#[derive(PartialEq, Eq)]
 pub struct GameRound {
     pub round_num: u32,
     pub session: EntryHash,
     pub round_state: RoundState,
     pub previous_round_moves: Vec<EntryHash>,
+}
+
+impl GameRound {}
+
+impl Clone for GameRound {
+    fn clone(&self) -> Self {
+        GameRound {
+            round_num: self.round_num,
+            session: self.session.clone(),
+            round_state: self.round_state.clone(),
+            previous_round_moves: vec![], //TODO clone moves
+        }
+    }
+
+    fn clone_from(&mut self, source: &Self) {
+        *self = source.clone()
+    }
 }
 
 /*
@@ -102,14 +120,14 @@ mod tests {
         let p1_key = fixt!(AgentPubKey);
         let move1 = GameMove {
             owner: p1_key.clone(),
-            previous_round: Some(fixt!(EntryHash)),
+            previous_round: fixt!(EntryHash),
             resources: 5,
         };
 
         let p2_key = fixt!(AgentPubKey);
         let move2 = GameMove {
             owner: p2_key.clone(),
-            previous_round: Some(fixt!(EntryHash)),
+            previous_round: fixt!(EntryHash),
             resources: 10,
         };
         let s = calculate_round_state(gp.clone(), vec![move1, move2]);

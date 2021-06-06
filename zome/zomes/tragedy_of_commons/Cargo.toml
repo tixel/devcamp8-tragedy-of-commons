@@ -13,6 +13,8 @@ hdk = { git = "https://github.com/holochain/holochain", branch = "develop" }
 derive_more = "0"
 serde = "1"
 chrono = "0.4.19"
+mockall_double = "0.2.0"
+mockall = { version = "0.9"}
 
 
 [dev-dependencies]

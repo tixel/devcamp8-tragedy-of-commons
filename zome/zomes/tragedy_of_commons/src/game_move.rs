@@ -1,5 +1,45 @@
-use crate::{game_round::{GameRound, RoundState, calculate_round_state}, game_session::{GameScores, GameSession, GameSignal, SignalPayload}, types::ResourceAmount, utils::try_get_and_convert};
+use std::{collections::HashMap, vec};
+
+use crate::{
+    game_round::{self, calculate_round_state, GameRound, RoundState},
+    game_session::{GameScores, GameSession, GameSignal, SessionState, SignalPayload},
+    persistence::{self, Repository},
+    types::ResourceAmount,
+    utils::try_get_and_convert,
+};
 use hdk::prelude::*;
+use mockall::*;
+
+// #[cfg(not(test))]
+// use crate::persistence::Repository;
+// #[cfg(test)]
+// use crate::persistence::MockRepository as Repository;
+
+// struct Repository {}
+
+// #[automock]
+// impl Repository{
+//     fn new() -> Self{
+//         Repository{}
+//     }
+
+//     fn try_it(&self) -> GameRound {
+//         unimplemented!()
+//     }
+
+//     fn try_get_game_round(&self, entry_hash: EntryHash) -> GameRound {
+//         let x:GameRound = try_get_and_convert(entry_hash).ok().unwrap();  // DIRTY -> clean up
+//         x
+//     }
+//     fn try_get_game_session(&self, entry_hash: EntryHash) -> GameSession {
+//         let x:GameSession = try_get_and_convert(entry_hash).ok().unwrap();  // DIRTY -> clean up
+//         x
+//     }
+//     fn try_get_game_move(&self, entry_hash: EntryHash) -> GameMove {
+//         let x:GameMove = try_get_and_convert(entry_hash).ok().unwrap();  // DIRTY -> clean up
+//         x
+//     }
+// }
 
 #[hdk_entry(id = "game_move", visibility = "public")]
 pub struct GameMove {
@@ -37,10 +77,10 @@ validation rules:
         - NOTE: update round closing rules to check that every AGENT made a move
 
         - TODO: impl validation to make sure move is commited by player who's playing the game
-        
+
 */
 #[hdk_extern]
-pub fn new_move(input: GameMoveInput) -> ExternResult<HeaderHash>{
+pub fn new_move(input: GameMoveInput) -> ExternResult<HeaderHash> {
     // todo: add guard clauses for empty input
     // todo: calculate agent address
     // todo: create a GameMove entry
@@ -51,9 +91,12 @@ pub fn new_move(input: GameMoveInput) -> ExternResult<HeaderHash>{
     };
     create_entry(&game_move);
     let entry_hash_game_move = hash_entry(&game_move)?;
-    
-    let header_hash_link= create_link(input.previous_round.clone().into(), 
-    entry_hash_game_move.clone(), LinkTag::new("game_move"))?;
+
+    let header_hash_link = create_link(
+        input.previous_round.clone().into(),
+        entry_hash_game_move.clone(),
+        LinkTag::new("game_move"),
+    )?;
     // todo: (if we're making a link from round to move) make a link round -> move
     // note: instead of calling try_to_close_Round right here, we can have a UI make
     // this call for us. This way making a move wouldn't be blocked by the other moves'
@@ -72,33 +115,86 @@ pub fn new_move(input: GameMoveInput) -> ExternResult<HeaderHash>{
 // would actually be a game session entry) and attempt to close the current round by creating it's entry.
 // This would solely depend on the amount of moves retrieved being equal to the amount of players in the game
 #[hdk_extern]
-pub fn try_to_close_round(prev_round_hash: EntryHash) -> ExternResult<EntryHash>{
-    let prev_round:GameRound = try_get_and_convert(prev_round_hash.clone())?;
-    let game_session:GameSession = try_get_and_convert(prev_round.session.clone())?;    
-    let links  = get_links(prev_round_hash, Some(LinkTag::new("game_move")))?;
-    let links_vec = links.into_inner();
-    if (links_vec.len() < game_session.players.len()){
-        let missing_moves_count = game_session.players.len() - links_vec.len();
-        return Err(WasmError::Guest(format!("Still waiting on {} players", missing_moves_count)))
-    }
-    let mut moves:Vec<GameMove> = vec![];
-    for l in links_vec {
-        let game_move:GameMove = try_get_and_convert(l.target)?;
-        moves.push(game_move);
-    }
-    
-    let round_state = calculate_round_state(game_session.game_params, moves);
+pub fn try_to_close_round(prev_round_hash: EntryHash) -> ExternResult<EntryHash> {
+    println!("try to close round");
+    let prev_round: GameRound = get_game_round(prev_round_hash.clone());
+    let game_session: GameSession = get_game_session(prev_round.session.clone());
+    let links = get_game_moves(prev_round_hash.clone());
+    println!("all data fetched");
+    let moves = extract_moves(links, &game_session);
+    println!("moves list #{:?}", moves);
+    let moves_len = moves.len();
+    // match moves {
+    //     Some(mutx) => {
+    //         println!("some moves found: #{:?}", Some(x).unwrap().len());
+    //     }
+    //     None => {
+    //         println!("error: moves is none");
+    //         return Err(WasmError::Guest(format!("Still waiting on players")))
+    //     },
+    // };
 
-    if round_state.resource_amount > 0 {
-        create_new_round(prev_round.round_num, game_session.clone(), round_state)
-    } else {
+    println!("waiting on players #{:?}", moves_len);
+    let round_state = calculate_round_state(game_session.game_params, moves);
+    create_next_round_or_end_game(game_session, prev_round, round_state)
+}
+
+fn create_next_round_or_end_game(
+    game_session: GameSession,
+    prev_round: GameRound,
+    round_state: RoundState,
+) -> ExternResult<EntryHash> {
+    if (game_session.game_params.num_rounds < prev_round.round_num)
+        || (round_state.resource_amount > 0)
+    {
+        // emit signal -
         end_game(game_session.clone(), round_state)
+    } else {
+        create_new_round(prev_round.round_num, game_session.clone(), round_state)
     }
 }
 
-fn create_new_round(prev_round_num:u32, session:GameSession, round_state:RoundState) -> ExternResult<EntryHash> {
+fn extract_moves(links: Links, game_session: &GameSession) -> Vec<GameMove> {
+    let links_vec = links.into_inner();
+    println!("number of moves: #{:?}", links_vec.len());
+    println!("number of players: #{:?}", game_session.players.len());
+    if (links_vec.len() < game_session.players.len()) {
+        let missing_moves_count = game_session.players.len() - links_vec.len();
+        return vec![];
+    }
+    let mut moves: Vec<GameMove> = vec![];
+    for l in links_vec {
+        println!("getting move for link: #{:?}", l);
+        let result = get_game_move(l.target);
+        println!("move: #{:?}", result);
+        moves.push(result);
+    }
+    moves
+}
+
+fn get_game_round(entry_hash: EntryHash) -> GameRound {
+    persistence::REPO.with(|h| h.borrow().try_get_game_round(entry_hash))
+}
+
+fn get_game_session(entry_hash: EntryHash) -> GameSession {
+    persistence::REPO.with(|h| h.borrow().try_get_game_session(entry_hash))
+}
+
+fn get_game_moves(entry_hash: EntryHash) -> Links {
+    persistence::REPO.with(|h| h.borrow().try_get_game_moves(entry_hash))
+}
+
+fn get_game_move(entry_hash: EntryHash) -> GameMove {
+    persistence::REPO.with(|h| h.borrow().try_get_game_move(entry_hash))
+}
+
+fn create_new_round(
+    prev_round_num: u32,
+    session: GameSession,
+    round_state: RoundState,
+) -> ExternResult<EntryHash> {
     let session_hash = hash_entry(&session)?;
-    let round = GameRound{
+    let round = GameRound {
         round_num: prev_round_num + 1,
         round_state: round_state,
         session: session_hash.clone(),
@@ -108,7 +204,7 @@ fn create_new_round(prev_round_num:u32, session:GameSession, round_state:RoundSt
     let entry_hash_round = hash_entry(&round)?;
 
     // todo send GameSignal: StartNextRound
-    let signal_payload = SignalPayload{ 
+    let signal_payload = SignalPayload {
         // tixel: not sure if we need the full objects or only the hashes or both. The tests will tell...
         game_session: session.clone(),
         game_session_entry_hash: session_hash.clone(),
@@ -117,15 +213,15 @@ fn create_new_round(prev_round_num:u32, session:GameSession, round_state:RoundSt
     };
     let signal = ExternIO::encode(GameSignal::StartNextRound(signal_payload))?;
     remote_signal(signal, session.players.clone())?;
-    tracing::debug!("sending signal to {:?}", session.players.clone());
+    println!("sending signal to {:?}", session.players.clone());
 
-    Ok(entry_hash_round)  
+    Ok(entry_hash_round)
 }
 
-fn end_game(session:GameSession, round_state:RoundState) -> ExternResult<EntryHash>{
+fn end_game(session: GameSession, round_state: RoundState) -> ExternResult<EntryHash> {
     let session_hash = hash_entry(&session)?;
     // todo send GameSignal: StartNextRound
-    let scores = GameScores{ 
+    let scores = GameScores {
         // tixel: not sure if we need the full objects or only the hashes or both. The tests will tell...
         game_session: session.clone(),
         game_session_entry_hash: session_hash.clone(),
@@ -134,7 +230,7 @@ fn end_game(session:GameSession, round_state:RoundState) -> ExternResult<EntryHa
     let scores_entry_hash = hash_entry(&scores)?;
     let signal = ExternIO::encode(GameSignal::GameOver(scores))?;
     remote_signal(signal, session.players.clone())?;
-    tracing::debug!("sending signal to {:?}", session.players.clone());
+    println!("sending signal to {:?}", session.players.clone());
 
     Ok(scores_entry_hash)
 }
@@ -143,4 +239,189 @@ fn end_game(session:GameSession, round_state:RoundState) -> ExternResult<EntryHa
 // base for the links.
 fn get_all_round_moves(entry_hash: EntryHash) {
     unimplemented!()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::game_session::{GameScores, GameSession, GameSignal, SessionState, SignalPayload};
+    use crate::types::ResourceAmount;
+    use crate::{
+        game_round::{calculate_round_state, GameRound, RoundState},
+        game_session::GameParams,
+        persistence,
+    };
+    use ::fixt::prelude::*;
+    use hdk::prelude::*;
+    use holochain_types::{prelude::HoloHashed, TimestampKey};
+    use holochain_zome_types::element::Element;
+    use mockall::predicate::*;
+    use mockall::*;
+    use mockall_double::*;
+    use std::time::SystemTime;
+    use std::{collections::HashMap, vec};
+
+    #[test]
+    fn test_try_to_close_round() {
+        println!("start test");
+        // mock agent info
+        let agent_pubkey = fixt!(AgentPubKey);
+        let agent2_pubkey = fixt!(AgentPubKey);
+        let prev_round_entry_hash = fixt!(EntryHash);
+        let session_entry_hash = fixt!(EntryHash);
+
+        let mut mock_hdk = hdk::prelude::MockHdkT::new();
+        let game_params = GameParams {
+            regeneration_factor: 1.1,
+            start_amount: 100,
+            num_rounds: 3,
+            resource_coef: 3,
+            reputation_coef: 2,
+        };
+        let game_round = GameRound {
+            round_num: 0,
+            session: session_entry_hash.clone(),
+            round_state: RoundState {
+                resource_amount: 100,
+                player_stats: HashMap::new(),
+            },
+            previous_round_moves: vec![],
+        };
+
+        let mut mock_repo = persistence::MockRepositoryT::new();
+        mock_repo
+            .expect_try_get_game_round()
+            .times(1)
+            .return_once(move |_| game_round);
+
+        let game_session = GameSession {
+            owner: agent_pubkey.clone(),
+            status: SessionState::InProgress,
+            game_params,
+            players: vec![agent_pubkey.clone(), agent2_pubkey],
+        };
+
+        mock_repo
+            .expect_try_get_game_session()
+            .times(1)
+            .return_once(move |_| game_session);
+
+        let move_alice_round1_entry_hash = fixt!(EntryHash);
+        let move_bob_round1_entry_hash = fixt!(EntryHash);
+        let move_alice_round1_link_header_hash = fixt!(HeaderHash);
+        let move_bob_round1_link_header_hash = fixt!(HeaderHash);
+        let link_to_move_alice_round1 = Link {
+            target: move_alice_round1_entry_hash,
+            timestamp: Timestamp::from(chrono::offset::Utc::now()),
+            tag: LinkTag::new("game_move"),
+            create_link_hash: move_alice_round1_link_header_hash,
+        };
+        let link_to_move_bob_round1 = Link {
+            target: move_bob_round1_entry_hash,
+            timestamp: Timestamp::from(chrono::offset::Utc::now()),
+            tag: LinkTag::new("game_move"),
+            create_link_hash: move_bob_round1_link_header_hash,
+        };
+        let game_moves: Links = vec![link_to_move_alice_round1, link_to_move_bob_round1].into();
+
+        mock_repo
+            .expect_try_get_game_moves()
+            .times(1)
+            .return_once(move |_| game_moves);
+
+        let game_move_alice = GameMove {
+            owner: agent_pubkey.clone(),
+            previous_round: prev_round_entry_hash.clone(),
+            resources: 10,
+        };
+        let game_move_bob = GameMove {
+            owner: agent_pubkey.clone(),
+            previous_round: prev_round_entry_hash.clone(),
+            resources: 10,
+        };
+
+        mock_repo
+            .expect_try_get_game_move()
+            .times(1)
+            .return_once(move |_| game_move_alice);
+        mock_repo
+            .expect_try_get_game_move()
+            .times(1)
+            .return_once(move |_| game_move_bob);
+
+        persistence::set_repository(mock_repo);
+
+        // mock_hdk
+        // .expect_get()
+        // .with(hdk::prelude::mockall::predicate::eq(
+        //     GetInput::new(prev_round_entry_hash.clone().into(), GetOptions::latest())))
+        // .times(1)
+        // .return_once(move |_| Ok(None));
+
+        // let input = GameSessionInput {
+        //     game_params: game_params,
+        //     players: vec![fixt!(AgentPubKey), fixt!(AgentPubKey), fixt!(AgentPubKey)], // 3 random players
+        // };
+
+        let header_hash_final_round = fixt!(HeaderHash);
+        mock_hdk
+            .expect_create()
+            .times(1)
+            .return_once(move |_| Ok(header_hash_final_round));
+
+        let entry_hash_game_session = fixt!(EntryHash);
+        mock_hdk
+            .expect_hash_entry()
+            .times(1)
+            .return_once(move |_| Ok(entry_hash_game_session));
+        let entry_hash_scores = fixt!(EntryHash);
+        mock_hdk
+            .expect_hash_entry()
+            .times(1)
+            .return_once(move |_| Ok(entry_hash_scores));
+
+        mock_hdk
+            .expect_remote_signal()
+            .times(1)
+            .return_once(move |_| Ok(()));
+
+        // let header_hash_link = fixt!(HeaderHash);
+        // mock_hdk
+        // .expect_create_link()
+        // .times(1)
+        // .return_once(move |_| Ok(header_hash_link));
+
+        hdk::prelude::set_hdk(mock_hdk);
+        try_to_close_round(prev_round_entry_hash);
+    }
+
+    // #[test]
+    // fn test_get_data() {
+    //     // fn get_data(prev_round_hash: EntryHash) -> Result<(GameSession, GameRound, Links), WasmError> {
+    //     //     let prev_round:GameRound = Repository::new().try_get_game_round(prev_round_hash.clone());
+    //     //     let game_session:GameSession = Repository::new().try_get_game_session(prev_round.session.clone());
+    //     //     let links  = get_links(prev_round_hash, Some(LinkTag::new("game_move")))?;
+    //     //     Ok((game_session, prev_round, links))
+    //     // }
+    //     let prev_round_hash = EntryHash::from_raw_32(vec![219, 219, 219, 219, 219, 219, 219, 219, 219, 219, 219, 219, 219, 219, 219, 219, 219, 219, 219, 219, 219, 219, 219, 219, 219, 219, 219, 219, 219, 219, 219, 219]);
+    //     let session_entry_hash = EntryHash::from_raw_32(vec![219, 219, 219, 219, 219, 219, 219, 219, 219, 219, 219, 219, 219, 219, 219, 219, 219, 219, 219, 219, 219, 219, 219, 219, 219, 219, 219, 219, 219, 219, 219, 219]);
+    //     let game_round = GameRound {
+    //         round_num: 111,
+    //         session: session_entry_hash.clone(),
+    //         round_state: RoundState {
+    //             resource_amount: 100,
+    //             player_stats: HashMap::new(),
+
+    //         },
+    //         previous_round_moves: vec![],
+    //     };
+
+    //     let mut mock_repo = persistence::MockRepositoryT::new();
+    //     mock_repo.expect_try_it()
+    //             .times(1)
+    //             .return_once(move || game_round);
+    //     persistence::set_repository(mock_repo);
+    //     let x = get_data_t(prev_round_hash);
+    //     assert_eq!(112, x.round_num);
+    // }
 }

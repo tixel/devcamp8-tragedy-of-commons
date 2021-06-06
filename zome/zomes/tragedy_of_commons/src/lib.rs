@@ -18,6 +18,7 @@ mod game_round;
 mod game_session;
 mod types;
 mod utils;
+mod persistence;
 
 // TODO: Actually code the zome, all this code is just for reference and quick copy-paste
 

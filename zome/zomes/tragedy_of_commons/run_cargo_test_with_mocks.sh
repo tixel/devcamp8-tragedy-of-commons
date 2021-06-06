@@ -1,0 +1,1 @@
+RUSTFLAGS='-A warnings' cargo test --features "mock" -- --nocapture

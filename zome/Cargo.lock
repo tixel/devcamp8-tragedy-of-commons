@@ -1461,6 +1461,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "mockall_double"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3e25b78d34b2b713b1d000d629079755cfc166e6a65f9f4c1c012a94305467c5"
+dependencies = [
+ "cfg-if 1.0.0",
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "mr_bundle"
 version = "0.0.1"
 source = "git+https://github.com/holochain/holochain?branch=develop#a6ac0439670ba367c723a80d3b8bc7c419aa5f6e"
@@ -2882,6 +2894,7 @@ dependencies = [
  "holochain_types",
  "holochain_zome_types",
  "mockall 0.9.1",
+ "mockall_double",
  "serde",
 ]
 
