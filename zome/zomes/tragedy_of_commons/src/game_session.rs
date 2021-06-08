@@ -196,9 +196,9 @@ mod tests {
         };
 
         // mock agent info
-        let agent_pubkey = fixt!(AgentPubKey);
-        let agent_info = AgentInfo::new(agent_pubkey.clone(), agent_pubkey.clone());
-        let agent2_pubkey = fixt!(AgentPubKey);
+        let agent_pubkey = AgentPubKeyB64::from(fixt!(AgentPubKey));
+        let agent_info = AgentInfo::new(agent_pubkey.into(), agent_pubkey.into());
+        let agent2_pubkey = AgentPubKeyB64::from(fixt!(AgentPubKey));
 
         mock_hdk
             .expect_agent_info()
@@ -214,10 +214,10 @@ mod tests {
             .expect_create()
             .with(hdk::prelude::mockall::predicate::eq(
                 EntryWithDefId::try_from(GameSession {
-                    owner: agent_pubkey.clone(),
+                    owner: agent_pubkey.into(),
                     status: SessionState::InProgress,
                     game_params: game_params.clone(),
-                    players: vec![agent_pubkey.clone(), agent2_pubkey],
+                    players: vec![agent_pubkey.into(), agent2_pubkey],
                 })
                 .unwrap(),
             ))
@@ -226,7 +226,7 @@ mod tests {
 
         let input = GameSessionInput {
             game_params: game_params,
-            players: vec![fixt!(AgentPubKey), fixt!(AgentPubKey), fixt!(AgentPubKey)], // 3 random players
+            players: vec![AgentPubKeyB64::from(fixt!(AgentPubKey)), AgentPubKeyB64::from(fixt!(AgentPubKey)), AgentPubKeyB64::from(fixt!(AgentPubKey))], // 3 random players
         };
 
         let entry_hash_game_session = fixt!(EntryHash);

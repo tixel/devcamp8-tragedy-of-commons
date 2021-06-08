@@ -2,8 +2,10 @@ use std::{collections::HashMap, vec};
 
 use crate::{game_round::{self, GameRound, RoundState, calculate_round_state}, game_session::{GameScores, GameSession, GameSignal, SessionState, SignalPayload}, persistence::{self, Repository}, types::ResourceAmount, utils::{convert_keys_from_b64, try_get_and_convert}};
 use hdk::prelude::*;
+use holochain_types::prelude::EntryHashB64;
 use mockall::*;
 use holo_hash::AgentPubKeyB64;
+use crate::prelude::SignedHeader;
 
 #[hdk_entry(id = "game_move", visibility = "public")]
 pub struct GameMove {
@@ -12,7 +14,7 @@ pub struct GameMove {
     // retrospectively. And since all players are notified by the signal when they can make
     // a move, maybe we could pass that value from there, so that every player has it
     // when they're making a move
-    pub previous_round: EntryHash,
+    pub previous_round: EntryHashB64,
     pub resources: ResourceAmount,
 }
 #[derive(Clone, Debug, Serialize, Deserialize, SerializedBytes)]
@@ -21,7 +23,7 @@ pub struct GameMoveInput {
     // NOTE: if we're linking all moves to the round, this can never be None
     // as we'll need a base for the link. Instead moves for the round 0 could be
     // linked directly from the game session.
-    pub previous_round: EntryHash,
+    pub previous_round: EntryHashB64,
 }
 
 /*
@@ -165,7 +167,7 @@ fn create_new_round(
     };
     create_entry(&round)?;
     let entry_hash_round = hash_entry(&round)?;
-
+    get(entry_hash_round.clone(), GetOptions::content());
     let signal_payload = SignalPayload {
         // tixel: not sure if we need the full objects or only the hashes or both. The tests will tell...
         game_session: session.clone(),
@@ -209,9 +211,18 @@ fn get_all_round_moves(round_entry_hash: EntryHash) {
     unimplemented!();
 }
 
+mock!{
+    SignedHeader {}     // Name of the mock struct, less the "Mock" prefix
+    impl Clone for SignedHeader {   // specification of the trait to mock
+        fn clone(&self) -> Self;
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    
     use crate::game_session::{GameScores, GameSession, GameSignal, SessionState, SignalPayload};
     use crate::types::ResourceAmount;
     use crate::{
@@ -221,6 +232,11 @@ mod tests {
     };
     use ::fixt::prelude::*;
     use hdk::prelude::*;
+    use holochain_types::prelude::{EntryHashB64, HeaderHashB64};
+
+use mockall_double::double;
+    #[double]
+    use crate::prelude::SignedHeader;
     use holochain_types::{prelude::HoloHashed, TimestampKey};
     use holochain_zome_types::element::Element;
     use mockall::predicate::*;
@@ -228,15 +244,17 @@ mod tests {
     use mockall_double::*;
     use std::time::SystemTime;
     use std::{collections::HashMap, vec};
+    
+
 
     #[test]
     fn test_try_to_close_round() {
         println!("start test");
         // mock agent info
-        let agent_pubkey = fixt!(AgentPubKey);
-        let agent2_pubkey = fixt!(AgentPubKey);
-        let prev_round_entry_hash = fixt!(EntryHash);
-        let session_entry_hash = fixt!(EntryHash);
+        let agent_pubkey = AgentPubKeyB64::from(fixt!(AgentPubKey));
+        let agent2_pubkey = AgentPubKeyB64::from(fixt!(AgentPubKey));
+        let prev_round_entry_hash = EntryHashB64::from(fixt!(EntryHash));
+        let session_entry_hash = EntryHashB64::from(fixt!(EntryHash));
 
         let mut mock_hdk = hdk::prelude::MockHdkT::new();
         let game_params = GameParams {
@@ -248,7 +266,7 @@ mod tests {
         };
         let game_round = GameRound {
             round_num: 0,
-            session: session_entry_hash.clone(),
+            session: session_entry_hash.into(),
             round_state: RoundState {
                 resource_amount: 100,
                 player_stats: HashMap::new(),
@@ -274,21 +292,21 @@ mod tests {
             .times(1)
             .return_once(move |_| game_session);
 
-        let move_alice_round1_entry_hash = fixt!(EntryHash);
-        let move_bob_round1_entry_hash = fixt!(EntryHash);
-        let move_alice_round1_link_header_hash = fixt!(HeaderHash);
-        let move_bob_round1_link_header_hash = fixt!(HeaderHash);
+        let move_alice_round1_entry_hash = EntryHashB64::from(fixt!(EntryHash));
+        let move_bob_round1_entry_hash = EntryHashB64::from(fixt!(EntryHash));
+        let move_alice_round1_link_header_hash = HeaderHashB64::from(fixt!(HeaderHash));
+        let move_bob_round1_link_header_hash = HeaderHashB64::from(fixt!(HeaderHash));
         let link_to_move_alice_round1 = Link {
-            target: move_alice_round1_entry_hash,
+            target: move_alice_round1_entry_hash.into(),
             timestamp: Timestamp::from(chrono::offset::Utc::now()),
             tag: LinkTag::new("game_move"),
-            create_link_hash: move_alice_round1_link_header_hash,
+            create_link_hash: move_alice_round1_link_header_hash.into(),
         };
         let link_to_move_bob_round1 = Link {
-            target: move_bob_round1_entry_hash,
+            target: move_bob_round1_entry_hash.into(),
             timestamp: Timestamp::from(chrono::offset::Utc::now()),
             tag: LinkTag::new("game_move"),
-            create_link_hash: move_bob_round1_link_header_hash,
+            create_link_hash: move_bob_round1_link_header_hash.into(),
         };
         let game_moves: Links = vec![link_to_move_alice_round1, link_to_move_bob_round1].into();
 
@@ -299,12 +317,12 @@ mod tests {
 
         let game_move_alice = GameMove {
             owner: agent_pubkey.clone(),
-            previous_round: prev_round_entry_hash.clone(),
+            previous_round: prev_round_entry_hash.into(),
             resources: 10,
         };
         let game_move_bob = GameMove {
             owner: agent_pubkey.clone(),
-            previous_round: prev_round_entry_hash.clone(),
+            previous_round: prev_round_entry_hash.into(),
             resources: 10,
         };
 
@@ -319,12 +337,25 @@ mod tests {
 
         persistence::set_repository(mock_repo);
 
-        // mock_hdk
-        // .expect_get()
-        // .with(hdk::prelude::mockall::predicate::eq(
-        //     GetInput::new(prev_round_entry_hash.clone().into(), GetOptions::latest())))
-        // .times(1)
-        // .return_once(move |_| Ok(None));
+        let gmb: SerializedBytes = game_move_bob.into();
+
+
+
+        let bytes:AppEntryBytes = gmb.try_into();
+        let el = Element {
+
+            entry:ElementEntry::Present(Entry::App(bytes)),
+            signed_header:MockSignedHeader::new()
+
+            }
+        ;
+        
+        mock_hdk
+            .expect_get()
+            // .with(hdk::prelude::mockall::predicate::eq(
+            //     GetInput::new(prev_round_entry_hash.clone().into(), GetOptions::latest())))
+            .times(1)
+            .return_once(move |_| Ok(el));
 
         // let input = GameSessionInput {
         //     game_params: game_params,

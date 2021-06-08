@@ -132,6 +132,7 @@ mod tests {
     use super::*;
     use ::fixt::prelude::*;
     use hdk::prelude::*;
+    use holochain_types::prelude::EntryHashB64;
     use mockall::mock;
     use std::vec;
 
@@ -145,29 +146,29 @@ mod tests {
             reputation_coef: 2,
         };
 
-        let p1_key = fixt!(AgentPubKey);
+        let p1_key = AgentPubKeyB64::from(fixt!(AgentPubKey));
         let move1 = GameMove {
-            owner: p1_key.clone(),
-            previous_round: fixt!(EntryHash),
+            owner: p1_key.into(),
+            previous_round: EntryHashB64::from(fixt!(EntryHash)),
             resources: 5,
         };
 
-        let p2_key = fixt!(AgentPubKey);
+        let p2_key = AgentPubKeyB64::from(fixt!(AgentPubKey));
         let move2 = GameMove {
             owner: p2_key.clone(),
-            previous_round: fixt!(EntryHash),
+            previous_round: EntryHashB64::from(fixt!(EntryHash)),
             resources: 10,
         };
         let s = calculate_round_state(gp.clone(), vec![move1, move2]);
         assert_eq!(gp.clone().start_amount - 15, s.resource_amount);
 
         let stats_p1: (ResourceAmount, ReputationAmount) =
-            *s.player_stats.get(&p1_key.clone()).unwrap();
+            *s.player_stats.get(&p1_key.into()).unwrap();
         assert_eq!(stats_p1.0, 5);
         assert_eq!(stats_p1.1, 0);
 
         let stats_p2: (ResourceAmount, ReputationAmount) =
-            *s.player_stats.get(&p2_key.clone()).unwrap();
+            *s.player_stats.get(&p2_key.into()).unwrap();
         assert_eq!(stats_p2.0, 10);
         assert_eq!(stats_p1.1, 0);
     }

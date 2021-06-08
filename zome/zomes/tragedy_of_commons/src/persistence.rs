@@ -5,7 +5,7 @@ use std::{cell::RefCell, collections::HashMap};
 
 #[allow(dead_code)]
 use hdk::prelude::*;
-// use mockall::automock;
+use mockall::automock;
 
 use crate::{
     game_move::GameMove,
