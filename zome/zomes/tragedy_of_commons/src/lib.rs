@@ -104,7 +104,7 @@ pub fn make_new_move(input: GameMoveInput) -> ExternResult<HeaderHash> {
 /// Function to call from the UI on a regular basis to try and close the currently
 /// active GameRound. It will check the currently available GameRound state and then
 /// will close it if it's possible. If not, it will return None
-pub fn try_to_close_round(prev_round_hash: EntryHash) -> ExternResult<EntryHash> {
+pub fn try_to_close_round(prev_round_hash: EntryHashB64) -> ExternResult<EntryHash> {
     // TODO: this should probably go to the game_round.rs instead
     game_move::try_to_close_round(prev_round_hash)
 }

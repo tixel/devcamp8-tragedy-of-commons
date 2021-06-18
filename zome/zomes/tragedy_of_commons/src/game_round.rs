@@ -148,7 +148,7 @@ mod tests {
 
         let p1_key = AgentPubKeyB64::from(fixt!(AgentPubKey));
         let move1 = GameMove {
-            owner: p1_key.into(),
+            owner: p1_key.clone().into(),
             previous_round: EntryHashB64::from(fixt!(EntryHash)),
             resources: 5,
         };
@@ -163,12 +163,12 @@ mod tests {
         assert_eq!(gp.clone().start_amount - 15, s.resource_amount);
 
         let stats_p1: (ResourceAmount, ReputationAmount) =
-            *s.player_stats.get(&p1_key.into()).unwrap();
+            *s.player_stats.get(&p1_key.clone().into()).unwrap();
         assert_eq!(stats_p1.0, 5);
         assert_eq!(stats_p1.1, 0);
 
         let stats_p2: (ResourceAmount, ReputationAmount) =
-            *s.player_stats.get(&p2_key.into()).unwrap();
+            *s.player_stats.get(&p2_key.clone().into()).unwrap();
         assert_eq!(stats_p2.0, 10);
         assert_eq!(stats_p1.1, 0);
     }

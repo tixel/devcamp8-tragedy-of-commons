@@ -9,23 +9,27 @@ crate-type = ["cdylib", "rlib"]
 name = "tragedy_of_commons"
 
 [dependencies]
-hdk = { git = "https://github.com/holochain/holochain", branch = "develop" }
+hdk = { git = "https://github.com/holochain/holochain", rev = "3a47f9798c6175997d27d450a7c4a0b92d17d4da" }
+# hdk = { git = "https://github.com/holochain/holochain", branch = "develop"}
 derive_more = "0"
-serde = "1"
+# use whatever serde hdk uses
+serde = "*"
 chrono = "0.4.19"
 mockall_double = "0.2.0"
 mockall = { version = "0.9"}
 
 
 [dev-dependencies]
-fixt = { git = "https://github.com/holochain/holochain", branch = "develop" }
-holochain_zome_types = { git = "https://github.com/holochain/holochain", branch = "develop" }
-holochain_types = { git = "https://github.com/holochain/holochain", branch = "develop" }
+fixt = { git = "https://github.com/holochain/holochain", rev = "3a47f9798c6175997d27d450a7c4a0b92d17d4da" }
+# fixt = { git = "https://github.com/holochain/holochain", branch = "develop" }
+holochain_types = { git = "https://github.com/holochain/holochain", rev = "3a47f9798c6175997d27d450a7c4a0b92d17d4da" }
+# holochain_types = { git = "https://github.com/holochain/holochain", branch = "develop" }
+# holochain_zome_types = { git = "https://github.com/holochain/holochain", branch = "develop" }
 mockall = { version = "0.9"}
 
 [features]
 default = []
-mock = ["hdk/mock"]
+mock = ["hdk/mock", "hdk/test_utils"]
 
 
 

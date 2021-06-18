@@ -1,5 +1,7 @@
 use hdk::prelude::*;
 use holo_hash::AgentPubKeyB64;
+
+use crate::game_move::GameMove;
 // NOTE: didn't had time to figure out how to apply this once on a lib level
 // TODO: remove it later
 
@@ -9,6 +11,17 @@ pub fn try_get_and_convert<T: 'static + TryFrom<Entry>>(entry_hash: EntryHash) -
         Some(element) => try_from_element(element),
         None => Err(crate::err("Entry not found")),
     }
+}
+
+pub fn try_get_game_moves(entry_hash: EntryHash) -> Vec<GameMove> {
+    let result = get_links(entry_hash, Some(LinkTag::new("game_move")));
+    let links = result.unwrap();
+    let mut items: Vec<GameMove> = vec![];
+    for link in links.into_inner() {
+        let item:GameMove = try_get_and_convert(link.target).unwrap();
+        items.push(item)
+    };
+    items
 }
 
 pub fn try_from_element<T: TryFrom<Entry>>(element: Element) -> ExternResult<T> {
