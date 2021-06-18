@@ -5,7 +5,6 @@ use crate::game_move::GameMove;
 // NOTE: didn't had time to figure out how to apply this once on a lib level
 // TODO: remove it later
 
-
 pub fn try_get_and_convert<T: 'static + TryFrom<Entry>>(entry_hash: EntryHash) -> ExternResult<T> {
     match get(entry_hash.clone(), GetOptions::default())? {
         Some(element) => try_from_element(element),
@@ -18,9 +17,9 @@ pub fn try_get_game_moves(entry_hash: EntryHash) -> Vec<GameMove> {
     let links = result.unwrap();
     let mut items: Vec<GameMove> = vec![];
     for link in links.into_inner() {
-        let item:GameMove = try_get_and_convert(link.target).unwrap();
+        let item: GameMove = try_get_and_convert(link.target).unwrap();
         items.push(item)
-    };
+    }
     items
 }
 

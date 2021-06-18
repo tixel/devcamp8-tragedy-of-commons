@@ -1,7 +1,7 @@
 // use game_session::GameSession;
 use hdk::prelude::*;
 #[allow(unused)]
-use holo_hash::{AgentPubKeyB64, EntryHashB64};
+use holo_hash::{AgentPubKeyB64, EntryHashB64, HeaderHashB64};
 
 #[allow(unused_imports)]
 use crate::{
@@ -20,9 +20,9 @@ mod game_round;
 #[allow(dead_code)]
 #[allow(unused)]
 mod game_session;
+mod persistence;
 mod types;
 mod utils;
-mod persistence;
 
 pub fn err(reason: &str) -> WasmError {
     WasmError::Guest(String::from(reason))
@@ -104,9 +104,9 @@ pub fn make_new_move(input: GameMoveInput) -> ExternResult<HeaderHash> {
 /// Function to call from the UI on a regular basis to try and close the currently
 /// active GameRound. It will check the currently available GameRound state and then
 /// will close it if it's possible. If not, it will return None
-pub fn try_to_close_round(prev_round_hash: EntryHashB64) -> ExternResult<EntryHash> {
+pub fn try_to_close_round(prev_round_hash: EntryHashB64) -> ExternResult<HeaderHashB64> {
     // TODO: this should probably go to the game_round.rs instead
-    game_move::try_to_close_round(prev_round_hash)
+    game_round::try_to_close_round(prev_round_hash)
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, SerializedBytes)]
