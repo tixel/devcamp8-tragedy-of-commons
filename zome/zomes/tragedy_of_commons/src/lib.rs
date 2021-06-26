@@ -3,6 +3,7 @@ use hdk::prelude::*;
 #[allow(unused)]
 use holo_hash::{AgentPubKeyB64, EntryHashB64, HeaderHashB64};
 
+use crate::game_round::GameScores;
 #[allow(unused_imports)]
 use crate::{
     game_move::GameMoveInput,
@@ -33,7 +34,7 @@ entry_defs![
     game_session::GameSession::entry_def(),
     game_round::GameRound::entry_def(),
     game_move::GameMove::entry_def(),
-    game_session::GameScores::entry_def()
+    game_round::GameScores::entry_def()
 ];
 
 // give unrestricted access to recv_remote_signal, which is needed for sending remote signals

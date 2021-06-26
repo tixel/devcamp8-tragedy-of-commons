@@ -1,3 +1,4 @@
+use crate::game_round::GameScores;
 use crate::types::{new_player_stats, ResourceAmount};
 use crate::{
     game_round::{GameRound, RoundState},
@@ -8,7 +9,7 @@ use hdk::prelude::*;
 use holo_hash::AgentPubKeyB64;
 use std::{collections::HashMap, time::SystemTime};
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum SessionState {
     InProgress,
     Lost { last_round: EntryHash },
@@ -17,9 +18,9 @@ pub enum SessionState {
     Finished { last_round: EntryHash },
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, Copy)]
+#[derive(Clone, Debug, Serialize, Deserialize, Copy, PartialEq, Eq)]
 pub struct GameParams {
-    pub regeneration_factor: f32,
+    pub regeneration_factor: u32,
     pub start_amount: ResourceAmount,
     pub num_rounds: u32,
     pub resource_coef: u32,
@@ -27,7 +28,7 @@ pub struct GameParams {
 }
 
 #[hdk_entry(id = "game_session", visibility = "public")]
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct GameSession {
     pub owner: AgentPubKeyB64, // who started the game
     // pub created_at: Timestamp,     // when the game was started
@@ -48,14 +49,6 @@ pub struct SignalPayload {
     pub game_session_entry_hash: EntryHash,
     pub previous_round: GameRound,
     pub previous_round_entry_hash: EntryHash,
-}
-
-#[hdk_entry(id = "game_scores", visibility = "public")]
-#[derive(Clone)]
-pub struct GameScores {
-    pub game_session: GameSession,
-    pub game_session_entry_hash: EntryHash,
-    //TODO add the actual results :-)
 }
 
 /*
@@ -86,7 +79,7 @@ impl GameSession {
 pub fn start_dummy_session(player_list: Vec<AgentPubKeyB64>) -> ExternResult<HeaderHash> {
     let input = GameSessionInput {
         game_params: GameParams {
-            regeneration_factor: 1.1,
+            regeneration_factor: 1,
             start_amount: 100,
             num_rounds: 3,
             resource_coef: 3,
@@ -174,7 +167,7 @@ pub fn new_session(input: GameSessionInput) -> ExternResult<HeaderHash> {
 #[serde(tag = "signal_name", content = "signal_payload")]
 pub enum GameSignal {
     StartNextRound(SignalPayload),
-    GameOver(GameScores),
+    GameOver(SignalPayload),
 }
 
 // #[cfg(test)]

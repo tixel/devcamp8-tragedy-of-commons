@@ -3,7 +3,7 @@ use std::{collections::HashMap, vec};
 use crate::prelude::SignedHeader;
 use crate::{
     game_round::{self, calculate_round_state, GameRound, RoundState},
-    game_session::{GameScores, GameSession, GameSignal, SessionState, SignalPayload},
+    game_session::{GameSession, GameSignal, SessionState, SignalPayload},
     persistence::{self, Repository},
     types::ResourceAmount,
     utils::{convert_keys_from_b64, try_get_and_convert, try_get_game_moves},

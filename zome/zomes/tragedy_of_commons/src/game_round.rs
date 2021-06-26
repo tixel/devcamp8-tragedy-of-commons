@@ -1,10 +1,12 @@
 use crate::game_move::GameMove;
-use crate::game_session::{GameParams, GameScores, GameSession, GameSignal, SignalPayload};
+use crate::game_session::{GameParams, GameSession, GameSignal, SessionState, SignalPayload};
 use crate::types::{PlayerStats, ReputationAmount, ResourceAmount};
 use crate::utils::{convert_keys_from_b64, try_get_and_convert, try_get_game_moves};
 use hdk::prelude::*;
 use holo_hash::*;
+use holochain_types::signal::Signal;
 use std::collections::HashMap;
+use std::any::type_name;
 
 const NO_REPUTATION: ReputationAmount = 0;
 
@@ -67,6 +69,17 @@ impl GameRound {
         }
     }
 }
+
+
+#[hdk_entry(id = "game_scores", visibility = "public")]
+#[derive(Clone, PartialEq, Eq)]
+pub struct GameScores {
+    pub game_session: GameSession,
+    pub game_session_entry_hash: EntryHashB64,
+    pub player_stats:PlayerStats,
+    //TODO add the actual results :-)
+}
+
 
 /*
 validation rules:
@@ -159,13 +172,15 @@ fn create_next_round_or_end_game(
     prev_round: GameRound,
     round_state: RoundState,
 ) -> ExternResult<HeaderHash> {
-    if (game_session.game_params.num_rounds < prev_round.round_num)
-        || (round_state.resource_amount < 0)
+    if game_session.game_params.num_rounds < prev_round.round_num
     {
         // emit signal -
         println!("ending game");
-        end_game(game_session.clone(), round_state)
-    } else {
+        end_game_finished(game_session.clone(), round_state)
+    } else if round_state.resource_amount < 0 {
+        println!("game lost");
+        end_game_lost(game_session.clone(), round_state)
+    }else {
         println!("creating new round");
         create_new_round(prev_round.round_num, game_session.clone(), round_state)
     }
@@ -237,25 +252,43 @@ fn create_new_round(
     Ok(header_hash_round)
 }
 
-fn end_game(session: GameSession, round_state: RoundState) -> ExternResult<HeaderHash> {
+fn end_game_finished(session: GameSession, round_state: RoundState) -> ExternResult<HeaderHash> {
+    println!("calculating scores");
     let session_hash = hash_entry(&session)?;
-    let scores = GameScores {
-        // tixel: not sure if we need the full objects or only the hashes or both. The tests will tell...
-        game_session: session.clone(),
-        game_session_entry_hash: session_hash.clone(),
-    };
-    let scores_header_hash = create_entry(&scores)?;
-    let scores_entry_hash = hash_entry(&scores)?;
-
     // TODO: update GameSession entry to set it's state to closed
+    session.status = SessionState::Finished;
+    update_entry(session);
+    SignalPayload{
+        game_session: session,
+        game_session_entry_hash: session_hash,
+        previous_round: 
+    }
 
     let signal = ExternIO::encode(GameSignal::GameOver(scores))?;
     // Since we're storing agent keys as AgentPubKeyB64, and remote_signal only accepts
     // the AgentPubKey type, we need to convert our keys to the expected data type
     remote_signal(signal, convert_keys_from_b64(session.players.clone()))?;
-    tracing::debug!("sending signal to {:?}", session.players.clone());
+    println!("sending signal to {:?}", session.players.clone());
 
     Ok(scores_header_hash)
+}
+
+fn end_game_lost(session: GameSession, round_state: RoundState) -> ExternResult<HeaderHash> {
+    println!("calculating scores");
+    let session_hash = hash_entry(&session)?;
+    // TODO: update GameSession entry to set it's state to closed
+    session.status = SessionState::Lost
+    let signal = ExternIO::encode(GameSignal::GameOver(scores))?;
+    // Since we're storing agent keys as AgentPubKeyB64, and remote_signal only accepts
+    // the AgentPubKey type, we need to convert our keys to the expected data type
+    remote_signal(signal, convert_keys_from_b64(session.players.clone()))?;
+    println!("sending signal to {:?}", session.players.clone());
+
+    Ok(scores_header_hash)
+}
+
+fn type_of<T>(_: T) -> &'static str {
+    type_name::<T>()
 }
 
 // Retrieves all available game moves made in a certain round, where entry_hash identifies
@@ -268,7 +301,7 @@ fn get_all_round_moves(round_entry_hash: EntryHash) {
 #[rustfmt::skip]   // skipping formatting is needed, because to correctly import fixt we needed "use ::fixt::prelude::*;" which rustfmt does not like
 mod tests {
     use super::*;
-    use crate::game_session::{GameScores, GameSession, GameSignal, SessionState, SignalPayload};
+    use crate::game_session::{GameSession, GameSignal, SessionState, SignalPayload};
     use crate::types::ResourceAmount;
     use crate::{
         game_round::{calculate_round_state, GameRound, RoundState},
@@ -292,6 +325,7 @@ mod tests {
     use holochain_types::prelude::ElementFixturator;
 
     #[test]
+    // to run just this test =>   RUSTFLAGS='-A warnings' cargo test --features "mock" --package tragedy_of_commons --lib -- game_round::tests::test_try_to_close_round_fails_not_enough_moves --exact --nocapture
     fn test_try_to_close_round_fails_not_enough_moves() {
         println!("closing round should fail because only one of two players has made a move.");
         // mock agent info
@@ -302,7 +336,7 @@ mod tests {
 
         let mut mock_hdk = hdk::prelude::MockHdkT::new();
         let game_params = GameParams {
-            regeneration_factor: 1.1,
+            regeneration_factor: 1,
             start_amount: 100,
             num_rounds: 3,
             resource_coef: 3,
@@ -379,7 +413,7 @@ mod tests {
     }
 
     #[test]
-    fn test_try_to_close_round_create_next_round() {
+    fn test_try_to_close_round_success_create_next_round() {
         println!("start test");
         // mock agent info
         let agent_pubkey_alice = AgentPubKeyB64::from(fixt!(AgentPubKey));
@@ -389,9 +423,9 @@ mod tests {
 
         let mut mock_hdk = hdk::prelude::MockHdkT::new();
         let game_params = GameParams {
-            regeneration_factor: 1.1,
+            regeneration_factor: 1,
             start_amount: 100,
-            num_rounds: 1,
+            num_rounds: 3,
             resource_coef: 3,
             reputation_coef: 2,
         };
@@ -480,12 +514,12 @@ mod tests {
             .times(1)
             .return_once(move |_| Ok(Some(element_with_game_move_bob)));
 
-        let header_hash_final_round = fixt!(HeaderHash);
-        let header_hash_final_round_closure = header_hash_final_round.clone();
+        let header_hash_next_round = fixt!(HeaderHash);
+        let header_hash_next_round_closure = header_hash_next_round.clone();
         mock_hdk
             .expect_create()
             .times(1)
-            .return_once(move |_| Ok(header_hash_final_round_closure));
+            .return_once(move |_| Ok(header_hash_next_round_closure));
 
         let entry_hash_game_session = fixt!(EntryHash);
         mock_hdk
@@ -505,12 +539,12 @@ mod tests {
 
         hdk::prelude::set_hdk(mock_hdk);
         let result = try_to_close_round(prev_round_entry_hash.clone());
-        assert_eq!(result.unwrap(), HeaderHashB64::from(header_hash_final_round.clone()));
+        assert_eq!(result.unwrap(), HeaderHashB64::from(header_hash_next_round.clone()));
     }
 
     #[test]
-    #[ignore = "WIP should send scores "]
-    fn test_try_to_close_round_end_game_resources_depleted(){
+    // #[ignore = "WIP should send scores "]
+    fn test_try_to_close_round_success_end_game_resources_depleted(){
         println!("start test");
         let agent_pubkey_alice = AgentPubKeyB64::from(fixt!(AgentPubKey));
         let agent_pubkey_bob = AgentPubKeyB64::from(fixt!(AgentPubKey));
@@ -519,7 +553,7 @@ mod tests {
 
         let mut mock_hdk = hdk::prelude::MockHdkT::new();
         let game_params = GameParams {
-            regeneration_factor: 1.1,
+            regeneration_factor: 1,
             start_amount: 100,
             num_rounds: 1,
             resource_coef: 3,
@@ -585,12 +619,12 @@ mod tests {
         let game_move_alice = GameMove {
             owner: agent_pubkey_alice.clone(),
             previous_round: prev_round_entry_hash.clone().into(),
-            resources: 100,
+            resources: 10,
         };
         let game_move_bob = GameMove {
             owner: agent_pubkey_bob.clone(),
             previous_round: prev_round_entry_hash.clone().into(),
-            resources: 10,
+            resources: 100, // bob takes all the resources at once
         };
 
         let mut element_with_game_move_alice = fixt!(Element);
@@ -610,24 +644,40 @@ mod tests {
             .times(1)
             .return_once(move |_| Ok(Some(element_with_game_move_bob)));
 
-        let header_hash_final_round = fixt!(HeaderHash);
-        let header_hash_final_round_closure = header_hash_final_round.clone();
-        mock_hdk
-            .expect_create()
-            .times(1)
-            .return_once(move |_| Ok(header_hash_final_round_closure));
+        // let header_hash_final_round = fixt!(HeaderHash);
+        // let header_hash_final_round_closure = header_hash_final_round.clone();
+        let entry_hash_scores = fixt!(EntryHash);
+        let game_scores = GameScores{
+            game_session: game_session.clone(),
+            game_session_entry_hash: EntryHashB64::from(entry_hash_scores),
+        };
+        // mock_hdk
+        //     .expect_create()
+        //     // .with(mockall::predicate::eq(
+        //     //     EntryWithDefId::try_from(game_scores).unwrap()
+        //     // ))
+        //     .times(1)
+        //     .return_once(move |_| Ok(header_hash_final_round_closure));
+
 
         let entry_hash_game_session = fixt!(EntryHash);
         mock_hdk
             .expect_hash_entry()
             .times(1)
             .return_once(move |_| Ok(entry_hash_game_session));
+        
         let entry_hash_scores = fixt!(EntryHash);
+        let header_hash_scores = fixt!(HeaderHash);
+        let header_hash_scores_closure = header_hash_scores.clone();
         mock_hdk
             .expect_hash_entry()
             .times(1)
             .return_once(move |_| Ok(entry_hash_scores));
-
+        mock_hdk
+            .expect_create()
+            // .with(mockall::predicate::eq(EntryWithDefId::try_from(&game_scores).unwrap()))
+            .times(1)
+            .return_once(move |_| Ok(header_hash_scores_closure));
         mock_hdk
             .expect_remote_signal()
             .times(1)
@@ -635,7 +685,7 @@ mod tests {
 
         hdk::prelude::set_hdk(mock_hdk);
         let result = try_to_close_round(prev_round_entry_hash.clone());
-        assert_eq!(result.unwrap(), HeaderHashB64::from(header_hash_final_round.clone()));
+        assert_eq!(result.unwrap(), HeaderHashB64::from(header_hash_scores.clone()));
     }
 
     #[test]
@@ -648,7 +698,7 @@ mod tests {
     #[ignore = "refactoring"]
     fn test_calculate_round_state() {
         let gp = GameParams {
-            regeneration_factor: 1.1,
+            regeneration_factor: 1,
             start_amount: 100,
             num_rounds: 3,
             resource_coef: 3,
