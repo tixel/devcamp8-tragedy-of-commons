@@ -3,11 +3,10 @@ use hdk::prelude::*;
 #[allow(unused)]
 use holo_hash::{AgentPubKeyB64, EntryHashB64, HeaderHashB64};
 
-use crate::game_round::GameScores;
 #[allow(unused_imports)]
 use crate::{
     game_move::GameMoveInput,
-    game_session::{GameSessionInput, GameSignal, SignalPayload},
+    game_session::{GameSessionInput, GameSignal},
 };
 #[allow(unused_imports)]
 #[allow(dead_code)]
@@ -34,7 +33,7 @@ entry_defs![
     game_session::GameSession::entry_def(),
     game_round::GameRound::entry_def(),
     game_move::GameMove::entry_def(),
-    game_round::GameScores::entry_def()
+    game_session::GameScores::entry_def()
 ];
 
 // give unrestricted access to recv_remote_signal, which is needed for sending remote signals
@@ -98,16 +97,18 @@ pub fn create_new_session(input: GameSessionInput) -> ExternResult<HeaderHash> {
 // pub fn get_my_active_sessions() -> ExternResult<Vec<EntryHashB64>> {}
 
 /// Function to make a new move in the game specified by input
-pub fn make_new_move(input: GameMoveInput) -> ExternResult<HeaderHash> {
-    game_move::new_move(input)
+pub fn make_new_move(input: GameMoveInput) -> ExternResult<HeaderHashB64> {
+    let result_game_move_link = game_move::new_move(input)?;
+    ExternResult::Ok(result_game_move_link.into())
 }
 
 /// Function to call from the UI on a regular basis to try and close the currently
 /// active GameRound. It will check the currently available GameRound state and then
 /// will close it if it's possible. If not, it will return None
-pub fn try_to_close_round(prev_round_hash: EntryHashB64) -> ExternResult<HeaderHashB64> {
+#[hdk_extern]
+pub fn try_to_close_round(round_hash: HeaderHashB64) -> ExternResult<HeaderHashB64> {
     // TODO: this should probably go to the game_round.rs instead
-    game_round::try_to_close_round(prev_round_hash)
+    game_round::try_to_close_round(round_hash.into())
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, SerializedBytes)]

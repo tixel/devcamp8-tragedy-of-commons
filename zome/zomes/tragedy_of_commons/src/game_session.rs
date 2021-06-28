@@ -1,13 +1,13 @@
-use crate::game_round::GameScores;
-use crate::types::{new_player_stats, ResourceAmount};
+use crate::types::{PlayerStats, ResourceAmount, new_player_stats};
 use crate::{
     game_round::{GameRound, RoundState},
     types::ReputationAmount,
     utils::convert_keys_from_b64,
 };
 use hdk::prelude::*;
-use holo_hash::AgentPubKeyB64;
+use holo_hash::*;
 use std::{collections::HashMap, time::SystemTime};
+use uuid::Uuid;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum SessionState {
@@ -15,7 +15,7 @@ pub enum SessionState {
     Lost { last_round: EntryHash },
     // TODO: when validating things, check that last game round is finished to verify
     // that session itself is finished
-    Finished { last_round: EntryHash },
+    Finished,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Copy, PartialEq, Eq)]
@@ -32,9 +32,18 @@ pub struct GameParams {
 pub struct GameSession {
     pub owner: AgentPubKeyB64, // who started the game
     // pub created_at: Timestamp,     // when the game was started
-    pub status: SessionState,         // how the game is going
+//    pub status: SessionState,         // how the game is going   ---> TIXEL: why make it stateful, creates the need for updates, 
+                                      // increases the eventual consistency challenges
     pub game_params: GameParams,      // what specific game are we playing
     pub players: Vec<AgentPubKeyB64>, // who is playing
+}
+
+#[hdk_entry(id = "game_scores", visibility = "public")]
+#[derive(Clone, PartialEq, Eq)]
+pub struct GameScores {
+    // pub ended_at: Timestamp,     // when the game was started
+    pub session: EntryHashB64,      // which game
+    pub stats: PlayerStats,         // who is playing
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, SerializedBytes)]
@@ -44,11 +53,25 @@ pub struct GameSessionInput {
 }
 
 #[derive(Debug, Serialize, Deserialize, SerializedBytes)]
-pub struct SignalPayload {
+pub struct SignalPayloadNextRound {
     pub game_session: GameSession,
-    pub game_session_entry_hash: EntryHash,
-    pub previous_round: GameRound,
-    pub previous_round_entry_hash: EntryHash,
+    pub game_session_header_hash: HeaderHashB64,
+    pub current_round: GameRound,
+    pub current_round_header_hash: HeaderHashB64,
+    pub next_round_header_hash: HeaderHashB64,
+}
+
+#[derive(Debug, Serialize, Deserialize, SerializedBytes)]
+pub struct SignalPayloadStartGame {
+    pub game_session: GameSession,
+    pub game_session_header_hash: HeaderHashB64,
+    pub current_round: GameRound,
+    pub current_round_header_hash: HeaderHashB64,
+}
+
+#[derive(Debug, Serialize, Deserialize, SerializedBytes)]
+pub struct SignalPayloadGameOver {
+    pub game_scores: GameScores,
 }
 
 /*
@@ -98,17 +121,15 @@ pub fn new_session(input: GameSessionInput) -> ExternResult<HeaderHash> {
     let agent_info: AgentInfo = agent_info()?;
 
     // TODO: get timestamp as systime
-
-    let latest_pubkey = agent_info.agent_latest_pubkey;
+    
     // create entry for game session
     let gs = GameSession {
         owner: AgentPubKeyB64::from(agent_info.agent_initial_pubkey),
-        status: SessionState::InProgress,
-        game_params: input.game_params,
+        game_params: input.game_params,  // rules of the game
         players: input.players.clone(),
     };
-    create_entry(&gs)?;
-    let entry_hash_game_session = hash_entry(&gs)?;
+    let game_session_header_hash = create_entry(&gs)?;
+    let game_session_entry_hash = hash_entry(&gs)?;
 
     // make link from every players agent address to game session entry
     // tixel: this is not needed I think, implicit links are in game session
@@ -123,20 +144,16 @@ pub fn new_session(input: GameSessionInput) -> ExternResult<HeaderHash> {
     let no_moves: Vec<EntryHash> = vec![];
 
     // TODO: create a link from session to game round entry to make the round discoverable
-    let round_zero = GameRound::new(
-        0,
-        entry_hash_game_session.clone(),
-        RoundState::new(
-            // NOTE(e-nastasia): we don't have to do clone() for the start_amount
-            // because it's one of the primitive types that implement the Copy trait
-            // so it's value will be copied instead of being moved
-            gs.game_params.start_amount,
-            new_player_stats(input.players.clone()),
-        ),
-        no_moves,
-    );
-    let header_hash_round_zero = create_entry(&round_zero)?;
-    let entry_hash_round_zero = hash_entry(&round_zero)?;
+    let round_one = GameRound {
+        round_state: RoundState::InProgress,
+        round_num: 1,
+        session: game_session_header_hash,
+        player_stats: new_player_stats(input.players.clone()),
+        player_moves: no_moves,
+        resources_left: gs.game_params.start_amount,
+    };
+
+    let round_one_header_hash = create_entry(&round_one)?;
 
     // use remote signals from RSM to send a real-time notif to invited players
     //  ! using remote signal to ping other holochain backends, instead of emit_signal
@@ -144,14 +161,13 @@ pub fn new_session(input: GameSessionInput) -> ExternResult<HeaderHash> {
     // NOTE: we're sending signals to notify that a new round has started and
     // that players need to make their moves
     // WARNING: remote_signal is fire and forget, no error if it fails, might be a weak point if this were production happ
-    let signal_payload = SignalPayload {
-        // tixel: not sure if we need the full objects or only the hashes or both. The tests will tell...
+    let signal_payload = SignalPayloadStartGame {
         game_session: gs.clone(),
-        game_session_entry_hash: entry_hash_game_session,
-        previous_round: round_zero,
-        previous_round_entry_hash: entry_hash_round_zero,
+        game_session_header_hash: game_session_header_hash.into(),
+        current_round: round_one,
+        current_round_header_hash: round_one_header_hash.into(),
     };
-    let signal = ExternIO::encode(GameSignal::StartNextRound(signal_payload))?;
+    let signal = ExternIO::encode(GameSignal::StartGame(signal_payload))?;
     // Since we're storing agent keys as AgentPubKeyB64, and remote_signal only accepts
     // the AgentPubKey type, we need to convert our keys to the expected data type
     remote_signal(signal, convert_keys_from_b64(input.players.clone()))?;
@@ -160,14 +176,15 @@ pub fn new_session(input: GameSessionInput) -> ExternResult<HeaderHash> {
     // // todo: get timestamp as systime
     // create_entry(&calendar_event)?;
 
-    Ok(header_hash_round_zero)
+    Ok(round_one_header_hash)
 }
 
 #[derive(Serialize, Deserialize, SerializedBytes, Debug)]
 #[serde(tag = "signal_name", content = "signal_payload")]
 pub enum GameSignal {
-    StartNextRound(SignalPayload),
-    GameOver(SignalPayload),
+    StartGame(SignalPayloadStartGame),
+    NextRound(SignalPayloadNextRound),
+    GameOver(GameScores),
 }
 
 // #[cfg(test)]

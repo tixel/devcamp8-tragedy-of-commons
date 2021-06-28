@@ -17,6 +17,7 @@ serde = "*"
 chrono = "0.4.19"
 mockall_double = "0.2.0"
 mockall = { version = "0.9"}
+uuid = "^0.8"
 
 
 [dev-dependencies]

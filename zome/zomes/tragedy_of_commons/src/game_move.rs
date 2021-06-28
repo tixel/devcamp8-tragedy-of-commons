@@ -3,7 +3,7 @@ use std::{collections::HashMap, vec};
 use crate::prelude::SignedHeader;
 use crate::{
     game_round::{self, calculate_round_state, GameRound, RoundState},
-    game_session::{GameSession, GameSignal, SessionState, SignalPayload},
+    game_session::{GameSession, GameSignal, SessionState},
     persistence::{self, Repository},
     types::ResourceAmount,
     utils::{convert_keys_from_b64, try_get_and_convert, try_get_game_moves},
@@ -14,12 +14,12 @@ use mockall::*;
 
 #[hdk_entry(id = "game_move", visibility = "public")]
 pub struct GameMove {
-    pub owner: AgentPubKeyB64,
+    pub owner: AgentPubKey,
     // For the very first round this option would be None, because we create game rounds
     // retrospectively. And since all players are notified by the signal when they can make
     // a move, maybe we could pass that value from there, so that every player has it
     // when they're making a move
-    pub previous_round: EntryHashB64,
+    pub round: EntryHash,
     pub resources: ResourceAmount,
 }
 #[derive(Clone, Debug, Serialize, Deserialize, SerializedBytes)]
@@ -28,7 +28,7 @@ pub struct GameMoveInput {
     // NOTE: if we're linking all moves to the round, this can never be None
     // as we'll need a base for the link. Instead moves for the round 0 could be
     // linked directly from the game session.
-    pub previous_round: EntryHashB64,
+    pub entry_hash_round: EntryHashB64,
 }
 
 /*
@@ -51,17 +51,19 @@ for the context, here are notes on how we've made this decision:
 */
 #[hdk_extern]
 pub fn new_move(input: GameMoveInput) -> ExternResult<HeaderHash> {
+
+    let entry_hash_game_round:EntryHash = input.entry_hash_round.into();
     // todo: add guard clauses for empty input
     let game_move = GameMove {
-        owner: AgentPubKeyB64::from(agent_info()?.agent_initial_pubkey),
+        owner: agent_info()?.agent_initial_pubkey,
         resources: input.resource_amount,
-        previous_round: input.previous_round.clone(),
+        round: input.entry_hash_round.into(),
     };
-    create_entry(&game_move);
+    let header_hash_game_move = create_entry(&game_move)?;
     let entry_hash_game_move = hash_entry(&game_move)?;
 
-    let header_hash_link = create_link(
-        input.previous_round.clone().into(),
+    let game_move_link = create_link(
+        entry_hash_game_round.clone(),
         entry_hash_game_move.clone(),
         LinkTag::new("game_move"),
     )?;
@@ -69,7 +71,7 @@ pub fn new_move(input: GameMoveInput) -> ExternResult<HeaderHash> {
     // note: instead of calling try_to_close_Round right here, we can have a UI make
     // this call for us. This way making a move wouldn't be blocked by the other moves'
     // retrieval process and the process of commiting the round entry.
-    Ok(header_hash_link.into())
+    Ok(game_move_link.into())
 }
 
 // Question: how do we make moves discoverable by the players?
