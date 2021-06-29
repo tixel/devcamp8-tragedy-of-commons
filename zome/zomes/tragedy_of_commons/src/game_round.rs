@@ -29,18 +29,15 @@ impl Clone for GameRound {
             round_state: self.round_state,
             round_num: self.round_num,
             session: self.session.clone(),
-            resource_amount: self.resource_amount,
+            resources_left: self.resources_left,
             player_stats: self.player_stats.clone(),
-            player_moves: vec![], //TODO clone moves
+            player_moves: vec![],
         }
-    }
-
-    fn clone_from(&mut self, source: &Self) {
-        *self = source.clone()
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, SerializedBytes)]
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, SerializedBytes)]
 pub enum RoundState {
     InProgress,
     Finished,
@@ -76,7 +73,7 @@ pub fn calculate_round_state(params: GameParams, player_moves: Vec<GameMove>) ->
     // player stats
     let mut stats: HashMap<AgentPubKeyB64, (ResourceAmount, ReputationAmount)> = HashMap::new();
     for p in player_moves.iter() {
-        let a = p.owner.into();
+        let a = AgentPubKeyB64::from(p.owner.clone());
         let tuple: (ResourceAmount, ReputationAmount) = (p.resources, NO_REPUTATION);
         stats.insert(a, tuple);
     }
@@ -116,8 +113,8 @@ pub fn try_to_close_round(current_round_header_hash: HeaderHash) -> ExternResult
         Some(element) => element,
         None => return Err(WasmError::Guest("Current round not found".into())),
     };
-    let current_round_entry_hash: &EntryHash = entry_hash_from_element(current_round_element)?;
-    let current_round: GameRound = try_from_element(current_round_element)?;
+    let current_round_entry_hash: EntryHash = entry_hash_from_element(current_round_element.clone())?;
+    let mut current_round: GameRound = try_from_element(current_round_element.clone())?;
 
     
     // get current game_session
@@ -126,7 +123,7 @@ pub fn try_to_close_round(current_round_header_hash: HeaderHash) -> ExternResult
         None => return Err(WasmError::Guest("Current round not found".into())),
     };
     let game_session: GameSession = get_game_session(current_round.session.into());
-    let game_session_header_hash: &HeaderHash = current_round_element.header_address();
+    let game_session_header_hash: HeaderHash = current_round_element.header_address().clone();
     let game_session_entry_hash = entry_hash_from_element(game_session_element)?;
     
     // get game moves
@@ -160,10 +157,16 @@ pub fn try_to_close_round(current_round_header_hash: HeaderHash) -> ExternResult
     let (resources_left, stats) = calculate_round_state(game_session.game_params, moves);
     
     // complete round state and update round entry
-    current_round.resources_left = resources_left;
-    current_round.player_stats = stats;
-    current_round.round_state = RoundState::Finished;
-    let updated_current_round_header_hash = update_entry(current_round_header_hash, current_round)?;
+    let updated_current_round = GameRound{
+        round_state: RoundState::Finished,
+        round_num:current_round.round_num,
+        session: game_session_header_hash.clone(),
+        resources_left: resources_left,
+        player_stats: stats.clone(),
+        player_moves: current_round.player_moves.clone(),  
+    };
+
+    let updated_current_round_header_hash = update_entry(current_round_header_hash, updated_current_round)?;
 
     // decide what to do next
     // - continue game, start next round
@@ -176,7 +179,7 @@ pub fn try_to_close_round(current_round_header_hash: HeaderHash) -> ExternResult
         let next_round = GameRound {
             round_num: current_round.round_num + 1,
             round_state: RoundState::InProgress,
-            session: *game_session_header_hash,
+            session: game_session_header_hash.clone(),
             resources_left: resources_left,
             player_stats: stats,
             player_moves: vec![],
@@ -185,11 +188,9 @@ pub fn try_to_close_round(current_round_header_hash: HeaderHash) -> ExternResult
         let next_round_entry_hash = hash_entry(&next_round)?;
 
         let signal_payload = SignalPayloadNextRound {
-            game_session: game_session.clone(),
-            game_session_header_hash: HeaderHashB64::from(*game_session_header_hash), 
-            current_round: current_round,
+            game_session_header_hash: HeaderHashB64::from(game_session_header_hash), 
             current_round_header_hash: HeaderHashB64::from(updated_current_round_header_hash),
-            next_round_header_hash: next_round_header_hash.into(),
+            next_round_header_hash: next_round_header_hash.clone().into(),
         };
         let signal = ExternIO::encode(GameSignal::NextRound(signal_payload))?;
         // Since we're storing agent keys as AgentPubKeyB64, and remote_signal only accepts
@@ -204,10 +205,10 @@ pub fn try_to_close_round(current_round_header_hash: HeaderHash) -> ExternResult
         // based on 
         // calculate and save gamescores
         let game_scores = GameScores{
-            session: EntryHashB64::from(*game_session_entry_hash),
+            session: EntryHashB64::from(game_session_entry_hash.clone()),
             stats: stats,
         };
-        let game_scores_header_hash = create_entry(game_scores)?;
+        let game_scores_header_hash = create_entry(&game_scores)?;
         let game_scores_entry_hash = hash_entry(&game_scores)?;
     
         // link scores to gamesession
@@ -221,7 +222,7 @@ pub fn try_to_close_round(current_round_header_hash: HeaderHash) -> ExternResult
             game_scores: game_scores,
         };
         // send signal
-        let signal = ExternIO::encode(GameSignal::GameOver(game_scores))?;
+        let signal = ExternIO::encode(GameSignal::GameOver(signal_payload))?;
         remote_signal(signal, convert_keys_from_b64(game_session.players.clone()))?;
         println!("sending signal to {:?}", game_session.players.clone());
         // return hash of scores

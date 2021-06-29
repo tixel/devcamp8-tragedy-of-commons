@@ -4,7 +4,6 @@ use crate::prelude::SignedHeader;
 use crate::{
     game_round::{self, calculate_round_state, GameRound, RoundState},
     game_session::{GameSession, GameSignal, SessionState},
-    persistence::{self, Repository},
     types::ResourceAmount,
     utils::{convert_keys_from_b64, try_get_and_convert, try_get_game_moves},
 };
@@ -52,18 +51,18 @@ for the context, here are notes on how we've made this decision:
 #[hdk_extern]
 pub fn new_move(input: GameMoveInput) -> ExternResult<HeaderHash> {
 
-    let entry_hash_game_round:EntryHash = input.entry_hash_round.into();
+    let game_round_entry_hash:EntryHash = input.entry_hash_round.into();
     // todo: add guard clauses for empty input
     let game_move = GameMove {
         owner: agent_info()?.agent_initial_pubkey,
         resources: input.resource_amount,
-        round: input.entry_hash_round.into(),
+        round: game_round_entry_hash.clone().into(),
     };
     let header_hash_game_move = create_entry(&game_move)?;
     let entry_hash_game_move = hash_entry(&game_move)?;
 
     let game_move_link = create_link(
-        entry_hash_game_round.clone(),
+        game_round_entry_hash.clone(),
         entry_hash_game_move.clone(),
         LinkTag::new("game_move"),
     )?;

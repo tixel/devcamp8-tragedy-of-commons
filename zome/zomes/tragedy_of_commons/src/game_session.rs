@@ -54,9 +54,7 @@ pub struct GameSessionInput {
 
 #[derive(Debug, Serialize, Deserialize, SerializedBytes)]
 pub struct SignalPayloadNextRound {
-    pub game_session: GameSession,
     pub game_session_header_hash: HeaderHashB64,
-    pub current_round: GameRound,
     pub current_round_header_hash: HeaderHashB64,
     pub next_round_header_hash: HeaderHashB64,
 }
@@ -147,7 +145,7 @@ pub fn new_session(input: GameSessionInput) -> ExternResult<HeaderHash> {
     let round_one = GameRound {
         round_state: RoundState::InProgress,
         round_num: 1,
-        session: game_session_header_hash,
+        session: game_session_header_hash.clone(),
         player_stats: new_player_stats(input.players.clone()),
         player_moves: no_moves,
         resources_left: gs.game_params.start_amount,
@@ -165,7 +163,7 @@ pub fn new_session(input: GameSessionInput) -> ExternResult<HeaderHash> {
         game_session: gs.clone(),
         game_session_header_hash: game_session_header_hash.into(),
         current_round: round_one,
-        current_round_header_hash: round_one_header_hash.into(),
+        current_round_header_hash: round_one_header_hash.clone().into(),
     };
     let signal = ExternIO::encode(GameSignal::StartGame(signal_payload))?;
     // Since we're storing agent keys as AgentPubKeyB64, and remote_signal only accepts
@@ -184,7 +182,7 @@ pub fn new_session(input: GameSessionInput) -> ExternResult<HeaderHash> {
 pub enum GameSignal {
     StartGame(SignalPayloadStartGame),
     NextRound(SignalPayloadNextRound),
-    GameOver(GameScores),
+    GameOver(SignalPayloadGameOver),
 }
 
 // #[cfg(test)]

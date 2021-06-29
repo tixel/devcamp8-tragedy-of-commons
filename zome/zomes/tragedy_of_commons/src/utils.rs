@@ -39,10 +39,13 @@ pub fn try_from_element<T: TryFrom<Entry>>(element: Element) -> ExternResult<T> 
     }
 }
 
-pub fn entry_hash_from_element(element:Element) -> ExternResult<&'static EntryHash> {
+pub fn entry_hash_from_element(element:Element) -> ExternResult<EntryHash> {
     let hash = element.header().entry_hash();
     match hash {
-        Some(e) => Ok(e),
+        Some(e) => {
+            let x = Some(e).unwrap().to_owned();
+            Ok(x.clone())
+        },
         None => Err(WasmError::Guest("cannot extract entry from element".into())),
     }
 }

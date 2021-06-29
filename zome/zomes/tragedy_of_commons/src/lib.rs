@@ -20,7 +20,6 @@ mod game_round;
 #[allow(dead_code)]
 #[allow(unused)]
 mod game_session;
-mod persistence;
 mod types;
 mod utils;
 
@@ -59,7 +58,7 @@ fn recv_remote_signal(signal: ExternIO) -> ExternResult<()> {
     let game_signal_result: Result<GameSignal, SerializedBytesError> = signal.decode();
     //debug!("Received REMOTE signal {:?}", sig);
     match game_signal_result {
-        Ok(a) => emit_signal(a),
+        Ok(a) => emit_signal(a),  // send signal to UI
         Err(_) => Err(WasmError::Guest("Remote signal failed".into())),
     }
 }

@@ -7,6 +7,7 @@ use holo_hash::AgentPubKeyB64;
 pub type ResourceAmount = i32;
 pub type ReputationAmount = i32;
 // TODO(e-nastasia): how do we make this datatype serializable?
+
 pub type PlayerStats = HashMap<AgentPubKeyB64, (ResourceAmount, ReputationAmount)>;
 
 /// Generates empty PlayerStats with 0 values for every player in players
