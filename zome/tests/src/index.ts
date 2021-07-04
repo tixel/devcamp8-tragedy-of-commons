@@ -81,12 +81,12 @@ orchestrator.registerScenario(
 
 
     // SIGNAL HANDLERS
-    let prev_round_hash;
+    let current_round_hash;
     let signalPromiseAlice = new Promise<void>((resolve) => alice.setSignalHandler((signal) => {
       let payload = signal.data.payload
       t.ok(payload);
       console.log("Alice received Signal:", signal.data.payload);
-      prev_round_hash = signal.data.payload.signal_payload.previous_round_entry_hash;
+      current_round_hash = signal.data.payload.signal_payload.current_round_header_hash;
       resolve();
     }));
     // .then(function(data) {
@@ -98,7 +98,7 @@ orchestrator.registerScenario(
     let signalPromiseBob = new Promise<void>((resolve) => bob.setSignalHandler((signal) => {
       let payload = signal.data.payload
       t.ok(payload);
-      console.log("Bob received Signal:");
+      console.log("Bob received Signal:", signal.data.payload);
       resolve();
     }));
 
@@ -118,21 +118,21 @@ orchestrator.registerScenario(
     await signalPromiseBob;
 
     sleep(500);
-    console.log("prev_round_hash", prev_round_hash);
+    console.log("current_round_hash", current_round_hash);
 
     // ROUND 1
     // Alice makes 1 move
     let game_move_round_1_alice = await alice_common.cells[0].call(
       ZOME_NAME,
       "new_move",
-      {resource_amount: 5, previous_round: prev_round_hash},
+      {resource_amount: 5, current_round_header_hash: current_round_hash},
     );
 
     // Bob makes 1 move
     let game_move_round_1_bob = await bob_common.cells[0].call(
       ZOME_NAME,
       "new_move",
-      {resource_amount: 125, previous_round: prev_round_hash},
+      {resource_amount: 10, current_round_header_hash: current_round_hash},
     );
     console.log(game_move_round_1_alice);
     t.ok(game_move_round_1_alice);
@@ -143,8 +143,69 @@ orchestrator.registerScenario(
     let close_game_round_1_bob = await bob_common.cells[0].call(
       ZOME_NAME,
       "try_to_close_round",
-      prev_round_hash,
+      current_round_hash,
     );
+
+    sleep(500);
+
+    console.log(close_game_round_1_bob);
+    let round_2_header_hash = close_game_round_1_bob;
+    console.log(round_2_header_hash);
+    
+    // ROUND 2
+    let signalPromiseAliceRound2 = new Promise<void>((resolve) => alice.setSignalHandler((signal) => {
+      let payload = signal.data.payload
+      t.ok(payload);
+      console.log("Alice received Signal:", signal.data.payload);
+      current_round_hash = signal.data.payload.signal_payload.current_round_header_hash;
+      resolve();
+    }));
+    
+    let signalPromiseBobRound2 = new Promise<void>((resolve) => bob.setSignalHandler((signal) => {
+      let payload = signal.data.payload
+      t.ok(payload);
+      console.log("Bob received Signal:", signal.data.payload);
+      resolve();
+    }));
+    
+    await signalPromiseBobRound2;
+    await signalPromiseAliceRound2;
+    sleep(500);
+    
+    
+    
+    // Bob makes 1 move
+    console.log("here");
+    let game_move_round_2_bob = await bob_common.cells[0].call(
+      ZOME_NAME,
+      "new_move",
+      {resource_amount: 15, current_round_header_hash: round_2_header_hash},
+    );
+
+    // console.log(game_move_round_2_bob);
+    // t.ok(game_move_round_2_bob);
+
+    // // CHECK  TO CLOSE GAME
+    // let close_game_round_2_bob = await bob_common.cells[0].call(
+    //   ZOME_NAME,
+    //   "try_to_close_round",
+    //   round_2_header_hash,
+    // );
+    // // Alice makes 1 move
+    // let game_move_round_2_alice = await alice_common.cells[0].call(
+    //   ZOME_NAME,
+    //   "new_move",
+    //   {resource_amount: 5, current_round_header_hash: round_2_header_hash},
+    // );
+    // console.log(game_move_round_2_alice);
+    // t.ok(game_move_round_2_alice);
+
+    // let close_game_round_2_alice = await alice_common.cells[0].call(
+    //   ZOME_NAME,
+    //   "try_to_close_round",
+    //   round_2_header_hash,
+    // );
+
   }
 );
 
