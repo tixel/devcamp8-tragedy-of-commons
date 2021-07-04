@@ -9,8 +9,8 @@ crate-type = ["cdylib", "rlib"]
 name = "tragedy_of_commons"
 
 [dependencies]
-hdk = { git = "https://github.com/holochain/holochain", rev = "3a47f9798c6175997d27d450a7c4a0b92d17d4da" }
-# hdk = { git = "https://github.com/holochain/holochain", branch = "develop"}
+# using same holochain version as nix-shell -> 3dc2d87f7f6de66d7de2c9160b6a962331ddd926
+hdk = { git = "https://github.com/holochain/holochain", rev = "3dc2d87f7f6de66d7de2c9160b6a962331ddd926" }
 derive_more = "0"
 # use whatever serde hdk uses
 serde = "*"
@@ -21,11 +21,8 @@ uuid = "^0.8"
 
 
 [dev-dependencies]
-fixt = { git = "https://github.com/holochain/holochain", rev = "3a47f9798c6175997d27d450a7c4a0b92d17d4da" }
-# fixt = { git = "https://github.com/holochain/holochain", branch = "develop" }
-holochain_types = { git = "https://github.com/holochain/holochain", rev = "3a47f9798c6175997d27d450a7c4a0b92d17d4da" }
-# holochain_types = { git = "https://github.com/holochain/holochain", branch = "develop" }
-# holochain_zome_types = { git = "https://github.com/holochain/holochain", branch = "develop" }
+# fixt = { git = "https://github.com/holochain/holochain", rev = "3dc2d87f7f6de66d7de2c9160b6a962331ddd926" }
+# holochain_types = { git = "https://github.com/holochain/holochain", rev = "3dc2d87f7f6de66d7de2c9160b6a962331ddd926" }
 mockall = { version = "0.9"}
 
 [features]

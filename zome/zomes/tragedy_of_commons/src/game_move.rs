@@ -1,6 +1,7 @@
 use std::{collections::HashMap, vec};
 
 use crate::prelude::SignedHeader;
+use crate::utils::entry_hash_from_element;
 use crate::{
     game_round::{self, calculate_round_state, GameRound, RoundState},
     game_session::{GameSession, GameSignal, SessionState},
@@ -27,7 +28,7 @@ pub struct GameMoveInput {
     // NOTE: if we're linking all moves to the round, this can never be None
     // as we'll need a base for the link. Instead moves for the round 0 could be
     // linked directly from the game session.
-    pub entry_hash_round: EntryHashB64,
+    pub current_round_header_hash: HeaderHashB64,
 }
 
 /*
@@ -51,12 +52,18 @@ for the context, here are notes on how we've made this decision:
 #[hdk_extern]
 pub fn new_move(input: GameMoveInput) -> ExternResult<HeaderHash> {
 
-    let game_round_entry_hash:EntryHash = input.entry_hash_round.into();
+    let game_round_header_hash:HeaderHash = input.current_round_header_hash.into();
+    let game_round_element = match get(game_round_header_hash, GetOptions::content())? {
+        Some(element) => element,
+        None => return Err(WasmError::Guest("Current round not found".into())),
+    };
+    let game_round_entry_hash = entry_hash_from_element(game_round_element)?;
+   
     // todo: add guard clauses for empty input
     let game_move = GameMove {
         owner: agent_info()?.agent_initial_pubkey,
         resources: input.resource_amount,
-        round: game_round_entry_hash.clone().into(),
+        round: game_round_entry_hash.clone(),
     };
     let header_hash_game_move = create_entry(&game_move)?;
     let entry_hash_game_move = hash_entry(&game_move)?;

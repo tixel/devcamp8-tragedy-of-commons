@@ -15,7 +15,7 @@ const NO_REPUTATION: ReputationAmount = 0;
 pub struct GameRound {
     pub round_state:RoundState,
     pub round_num: u32,
-    pub session: HeaderHash,
+    pub session_header_hash: HeaderHashB64,
     pub resources_left: ResourceAmount,
     pub player_stats: PlayerStats,
     pub player_moves: Vec<EntryHash>,
@@ -28,7 +28,7 @@ impl Clone for GameRound {
         GameRound {
             round_state: self.round_state,
             round_num: self.round_num,
-            session: self.session.clone(),
+            session_header_hash: self.session_header_hash.clone(),
             resources_left: self.resources_left,
             player_stats: self.player_stats.clone(),
             player_moves: vec![],
@@ -118,11 +118,11 @@ pub fn try_to_close_round(current_round_header_hash: HeaderHash) -> ExternResult
 
     
     // get current game_session
-    let game_session_element = match get(current_round.session.clone(), GetOptions::content())? {
+    let game_session_element = match get(HeaderHash::from(current_round.session_header_hash.clone()), GetOptions::content())? {
         Some(element) => element,
         None => return Err(WasmError::Guest("Current round not found".into())),
     };
-    let game_session: GameSession = get_game_session(current_round.session.into());
+    let game_session: GameSession = get_game_session(current_round.session_header_hash.into());
     let game_session_header_hash: HeaderHash = current_round_element.header_address().clone();
     let game_session_entry_hash = entry_hash_from_element(game_session_element)?;
     
@@ -160,7 +160,7 @@ pub fn try_to_close_round(current_round_header_hash: HeaderHash) -> ExternResult
     let updated_current_round = GameRound{
         round_state: RoundState::Finished,
         round_num:current_round.round_num,
-        session: game_session_header_hash.clone(),
+        session_header_hash: game_session_header_hash.clone().into(),
         resources_left: resources_left,
         player_stats: stats.clone(),
         player_moves: current_round.player_moves.clone(),  
@@ -179,7 +179,7 @@ pub fn try_to_close_round(current_round_header_hash: HeaderHash) -> ExternResult
         let next_round = GameRound {
             round_num: current_round.round_num + 1,
             round_state: RoundState::InProgress,
-            session: game_session_header_hash.clone(),
+            session_header_hash: game_session_header_hash.clone().into(),
             resources_left: resources_left,
             player_stats: stats,
             player_moves: vec![],

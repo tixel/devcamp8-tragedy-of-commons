@@ -145,7 +145,7 @@ pub fn new_session(input: GameSessionInput) -> ExternResult<HeaderHash> {
     let round_one = GameRound {
         round_state: RoundState::InProgress,
         round_num: 1,
-        session: game_session_header_hash.clone(),
+        session_header_hash: game_session_header_hash.clone().into(),
         player_stats: new_player_stats(input.players.clone()),
         player_moves: no_moves,
         resources_left: gs.game_params.start_amount,
